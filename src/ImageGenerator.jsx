@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import { useAuth } from './contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import './ImageGenerator.css';
 
 const ImageGenerator = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]); // v2: 配列化
   const [currentImageId, setCurrentImageId] = useState(null); // 現在表示中の画像ID
@@ -29,6 +33,11 @@ const ImageGenerator = () => {
   const [selectedStyleId, setSelectedStyleId] = useState(null); // 選択されたスタイルID
   const [objectInputs, setObjectInputs] = useState({ person: '', background: '', other: '' }); // オブジェクト入力
   const [yamlInput, setYamlInput] = useState(''); // YAML形式の入力
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   // localStorageから履歴を読み込み（最新10枚のみ、サムネイルのみ保存）
   useEffect(() => {
@@ -995,6 +1004,39 @@ const ImageGenerator = () => {
 
   return (
     <div className="image-generator">
+      {/* ヘッダー（ユーザー情報とログアウト） */}
+      <div className="app-header" style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '12px 20px',
+        backgroundColor: '#f5f5f5',
+        borderBottom: '1px solid #ddd',
+        marginBottom: '20px'
+      }}>
+        <div style={{ fontSize: '14px', color: '#666' }}>
+          ようこそ、<strong>{user?.username}</strong>さん
+        </div>
+        <button
+          onClick={handleLogout}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: '#dc3545',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: '500',
+            transition: 'background-color 0.2s'
+          }}
+          onMouseOver={(e) => e.target.style.backgroundColor = '#c82333'}
+          onMouseOut={(e) => e.target.style.backgroundColor = '#dc3545'}
+        >
+          ログアウト
+        </button>
+      </div>
+
       {/* タブ切り替えUI */}
       <div className="app-mode-tabs">
         <button
