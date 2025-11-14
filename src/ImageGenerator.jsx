@@ -321,10 +321,11 @@ const ImageGenerator = () => {
       const imageId = e.dataTransfer.getData('imageId');
       if (imageId && Array.isArray(images)) {
         const image = images.find(img => img && img.id === imageId);
-        if (image && image.imageUrl) {
+        const imageSource = image?.fullImageUrl || image?.imageUrl || image?.thumbnailUrl;
+        if (imageSource) {
           try {
             // Base64データを抽出
-            const base64 = extractBase64FromDataUrl(image.imageUrl);
+            const base64 = extractBase64FromDataUrl(imageSource);
             setUploadedImage(base64);
             setMode('edit'); // 修正モードに切り替え
             setError(null);
@@ -332,6 +333,9 @@ const ImageGenerator = () => {
             console.error('画像データの抽出に失敗しました:', err);
             setError('画像データの処理に失敗しました');
           }
+        } else {
+          console.warn('ドラッグされた画像に利用可能なデータがありません');
+          setError('この履歴画像のデータを取得できませんでした');
         }
       }
   };
@@ -764,7 +768,7 @@ const ImageGenerator = () => {
 
     // スタイル選択モーダルを表示
     const styleOptions = styles.map(s => s.name).join('\n');
-    const styleIndex = prompt(
+    const styleIndex = window.prompt(
       `スタイルを選択してください（番号を入力）:\n${styles.map((s, i) => `${i + 1}. ${s.name}`).join('\n')}\n\n新規スタイルを作成する場合は「new」と入力`,
       ''
     );
@@ -774,10 +778,10 @@ const ImageGenerator = () => {
     let targetStyle;
     if (styleIndex.toLowerCase() === 'new') {
       // 新規スタイルを作成
-      const styleName = prompt('新しいスタイル名を入力してください:');
+      const styleName = window.prompt('新しいスタイル名を入力してください:');
       if (!styleName || !styleName.trim()) return;
 
-      const stylePrompt = prompt('スタイルのプロンプトを入力してください:');
+      const stylePrompt = window.prompt('スタイルのプロンプトを入力してください:');
       if (!stylePrompt || !stylePrompt.trim()) return;
 
       targetStyle = {
@@ -2229,7 +2233,7 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
       return;
     }
 
-    const styleName = prompt('スタイル名を入力してください:', templateName || 'プロンプト ' + new Date().toLocaleString('ja-JP'));
+    const styleName = window.prompt('スタイル名を入力してください:', templateName || 'プロンプト ' + new Date().toLocaleString('ja-JP'));
     if (!styleName || !styleName.trim()) {
       return;
     }
