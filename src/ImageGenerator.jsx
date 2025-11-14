@@ -2241,8 +2241,8 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
     try {
       // localStorageから既存のスタイルを取得
       const saved = localStorage.getItem('imageStyles');
-      const existingStyles = saved ? JSON.parse(saved) : [];
-      
+      const existingStyles = saved ? JSON.parse(saved) : styles;
+
       const newStyle = {
         id: Date.now().toString(),
         name: styleName.trim(),
@@ -2254,6 +2254,7 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
 
       const updatedStyles = [...existingStyles, newStyle];
       localStorage.setItem('imageStyles', JSON.stringify(updatedStyles));
+      setStyles(updatedStyles);
       alert('スタイルライブラリに追加しました！');
     } catch (err) {
       console.error('スタイルライブラリへの追加に失敗しました:', err);
