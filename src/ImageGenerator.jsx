@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuth } from './contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import './ImageGenerator.css';
-import { supabaseRest } from './lib/supabaseClient';
+import { supabase, requireSession } from './lib/supabaseClient.js';
+import { persistImageHistory, removeImageHistory } from './lib/authService.js';
+
+const HISTORY_PAGE_SIZE = 10;
 
 const createDefaultStyles = () => ([
   { id: '1', name: '和風アート', prompt: '日本の伝統的な和風アートスタイル、浮世絵風、美しい色彩', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
@@ -14,7 +17,7 @@ const createDefaultStyles = () => ([
 ]);
 
 const ImageGenerator = () => {
-  const { user, session, logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState([]); // v2: 配列化
@@ -41,55 +44,45 @@ const ImageGenerator = () => {
   const [selectedStyleId, setSelectedStyleId] = useState(null); // 選択されたスタイルID
   const [objectInputs, setObjectInputs] = useState({ person: '', background: '', other: '' }); // オブジェクト入力
   const [yamlInput, setYamlInput] = useState(''); // YAML形式の入力
+  const [historyPage, setHistoryPage] = useState(0);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const base64CacheRef = useRef(new Map());
+
+  const presentError = useCallback((message, detail) => {
+    console.error(message, detail);
+    setError(message);
+  }, []);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
-  const supabaseToken = session?.access_token;
-
   const syncImageRecord = useCallback(async (image) => {
     if (!user?.id) return;
     try {
-      await supabaseRest('/rest/v1/image_histories', {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates' },
-        body: {
-          id: image.id,
-          user_id: user.id,
-          prompt: image.prompt,
-          thumbnail_url: image.thumbnailUrl || image.imageUrl || null,
-          created_at: image.createdAt,
-          revision: image.revision || 0,
-          title: image.title || '',
-          saved: image.saved || false,
-        },
-        accessToken: supabaseToken,
-      });
+      await persistImageHistory(image, supabase);
     } catch (err) {
-      console.error('画像履歴の保存に失敗しました', err);
+      presentError('画像履歴の保存に失敗しました', err);
     }
-  }, [user?.id, supabaseToken]);
+  }, [user?.id, presentError]);
 
   const deleteImageRecord = useCallback(async (imageId) => {
     if (!user?.id) return;
     try {
-      await supabaseRest(`/rest/v1/image_histories?id=eq.${encodeURIComponent(imageId)}&user_id=eq.${encodeURIComponent(user.id)}`, {
-        method: 'DELETE',
-        accessToken: supabaseToken,
-      });
+      await removeImageHistory(imageId, supabase);
     } catch (err) {
-      console.error('画像履歴の削除に失敗しました', err);
+      presentError('画像履歴の削除に失敗しました', err);
     }
-  }, [user?.id, supabaseToken]);
+  }, [user?.id, presentError]);
 
   const syncStyleRecord = useCallback(async (style) => {
     if (!user?.id) return;
     try {
-      await supabaseRest('/rest/v1/image_styles', {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates' },
-        body: {
+      await requireSession(supabase);
+      const { error } = await supabase
+        .from('image_styles')
+        .upsert({
           id: style.id,
           user_id: user.id,
           name: style.name,
@@ -97,99 +90,147 @@ const ImageGenerator = () => {
           thumbnail: style.thumbnail || null,
           source: style.source || 'manual',
           created_at: style.createdAt || new Date().toISOString(),
-        },
-        accessToken: supabaseToken,
-      });
+        }, { onConflict: 'id' });
+      if (error) {
+        throw error;
+      }
     } catch (err) {
-      console.error('スタイルの保存に失敗しました', err);
+      presentError('スタイルの保存に失敗しました', err);
     }
-  }, [user?.id, supabaseToken]);
+  }, [user?.id, presentError]);
 
   const deleteStyleRecord = useCallback(async (styleId) => {
     if (!user?.id) return;
     try {
-      await supabaseRest(`/rest/v1/image_styles?id=eq.${encodeURIComponent(styleId)}&user_id=eq.${encodeURIComponent(user.id)}`, {
-        method: 'DELETE',
-        accessToken: supabaseToken,
-      });
+      await requireSession(supabase);
+      const { error } = await supabase
+        .from('image_styles')
+        .delete()
+        .eq('id', styleId)
+        .eq('user_id', user.id);
+      if (error) {
+        throw error;
+      }
     } catch (err) {
-      console.error('スタイルの削除に失敗しました', err);
+      presentError('スタイルの削除に失敗しました', err);
     }
-  }, [user?.id, supabaseToken]);
+  }, [user?.id, presentError]);
 
-  useEffect(() => {
-    if (!user?.id || !supabaseToken) {
-      setImages([]);
+  const loadStyles = useCallback(async () => {
+    if (!user?.id) {
       setStyles(createDefaultStyles());
       return;
     }
-
-    let active = true;
-
-    const loadData = async () => {
-      try {
-        const [historyRows, styleRows] = await Promise.all([
-          supabaseRest(`/rest/v1/image_histories?user_id=eq.${encodeURIComponent(user.id)}&select=*&order=created_at.desc&limit=10`, {
-            accessToken: supabaseToken,
-          }),
-          supabaseRest(`/rest/v1/image_styles?user_id=eq.${encodeURIComponent(user.id)}&select=*&order=created_at.desc`, {
-            accessToken: supabaseToken,
-          }),
-        ]);
-
-        if (!active) return;
-
-        setImages(Array.isArray(historyRows)
-          ? historyRows.map(row => ({
-              id: row.id,
-              prompt: row.prompt,
-              thumbnailUrl: row.thumbnail_url,
-              createdAt: row.created_at,
-              revision: row.revision || 0,
-              title: row.title || '',
-              saved: row.saved || false,
-            }))
-          : []);
-
-        if (Array.isArray(styleRows) && styleRows.length > 0) {
-          setStyles(styleRows.map(row => ({
-            id: row.id,
-            name: row.name,
-            prompt: row.prompt,
-            thumbnail: row.thumbnail || null,
-            source: row.source || 'manual',
-            createdAt: row.created_at,
-          })));
-        } else {
-          setStyles(createDefaultStyles());
-        }
-      } catch (err) {
-        console.error('Supabaseからデータの取得に失敗しました', err);
-        if (active) {
-          setError('データの読み込みに失敗しました。再度お試しください。');
-        }
+    try {
+      await requireSession(supabase);
+      const { data, error } = await supabase
+        .from('image_styles')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) {
+        throw error;
       }
-    };
+      if (Array.isArray(data) && data.length > 0) {
+        setStyles(data.map(row => ({
+          id: row.id,
+          name: row.name,
+          prompt: row.prompt,
+          thumbnail: row.thumbnail || null,
+          source: row.source || 'manual',
+          createdAt: row.created_at,
+        })));
+      } else {
+        setStyles(createDefaultStyles());
+      }
+    } catch (err) {
+      presentError('スタイルの読み込みに失敗しました', err);
+      setStyles(createDefaultStyles());
+    }
+  }, [user?.id, presentError]);
 
-    loadData();
+  const loadHistories = useCallback(async ({ reset = false } = {}) => {
+    if (!user?.id) {
+      setImages([]);
+      setHasMoreHistory(false);
+      return;
+    }
+    setHistoryLoading(true);
+    try {
+      await requireSession(supabase);
+      const page = reset ? 0 : historyPage;
+      const from = page * HISTORY_PAGE_SIZE;
+      const to = from + HISTORY_PAGE_SIZE - 1;
+      const { data, error } = await supabase
+        .from('image_histories')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+      if (error) {
+        throw error;
+      }
+      const normalized = Array.isArray(data)
+        ? data.map(row => ({
+            id: row.id,
+            prompt: row.prompt,
+            thumbnailUrl: row.thumbnail_url,
+            createdAt: row.created_at,
+            revision: row.revision || 0,
+            title: row.title || '',
+            saved: row.saved || false,
+          }))
+        : [];
+      setImages(prev => {
+        const next = reset ? [] : [...prev];
+        normalized.forEach(item => {
+          if (!next.find(existing => existing.id === item.id)) {
+            next.push(item);
+          }
+        });
+        return next.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      });
+      setHistoryPage(page + 1);
+      setHasMoreHistory(normalized.length === HISTORY_PAGE_SIZE);
+    } catch (err) {
+      presentError('履歴の読み込みに失敗しました', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [user?.id, historyPage, presentError]);
 
-    return () => {
-      active = false;
-    };
-  }, [user?.id, supabaseToken]);
+  useEffect(() => {
+    if (!user?.id) {
+      setImages([]);
+      setStyles(createDefaultStyles());
+      setHistoryPage(0);
+      setHasMoreHistory(false);
+      return;
+    }
+    setHistoryPage(0);
+    setHasMoreHistory(false);
+    loadStyles();
+    loadHistories({ reset: true });
+  }, [user?.id, loadStyles, loadHistories]);
 
   // 画像をBase64に変換
-  const imageToBase64 = (file) => {
+  const imageToBase64 = useCallback((file) => {
+    const cacheKey = `${file.name}-${file.size}-${file.lastModified}`;
+    if (base64CacheRef.current.has(cacheKey)) {
+      return Promise.resolve(base64CacheRef.current.get(cacheKey));
+    }
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
-        const base64 = reader.result.split(',')[1]; // data:image/...;base64, の部分を除去
+        const base64 = reader.result.split(',')[1];
+        base64CacheRef.current.set(cacheKey, base64);
         resolve(base64);
       };
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
-  };
+  }, []);
 
   // サムネイル生成関数（F-01）
   const generateThumbnail = (imageUrl, maxSize = 200) => {
@@ -215,6 +256,16 @@ const ImageGenerator = () => {
       img.onerror = reject;
       img.src = imageUrl;
     });
+  };
+
+  const requestThumbnailFromApi = async (imageUrl, maxSize = 200) => {
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return await generateThumbnail(imageUrl, maxSize);
+    } catch (err) {
+      console.warn('サムネイルAPIが利用できません。ローカル生成にフォールバックします', err);
+      return generateThumbnail(imageUrl, maxSize);
+    }
   };
 
   // Base64文字列からBase64データを抽出（data:image/...;base64, の部分を除去）
@@ -258,8 +309,7 @@ const ImageGenerator = () => {
             setMode('edit'); // 修正モードに切り替え
             setError(null);
           } catch (err) {
-            console.error('画像データの抽出に失敗しました:', err);
-            setError('画像データの処理に失敗しました');
+            presentError('画像データの処理に失敗しました', err);
           }
         } else {
           console.warn('ドラッグされた画像に利用可能なデータがありません');
@@ -401,7 +451,7 @@ const ImageGenerator = () => {
       // サムネイルを生成
       let thumbnailUrl = imageDataUrl; // フォールバック用
       try {
-        thumbnailUrl = await generateThumbnail(imageDataUrl, 200);
+        thumbnailUrl = await requestThumbnailFromApi(imageDataUrl, 200);
         console.log('サムネイル生成成功');
       } catch (thumbErr) {
         console.warn('サムネイル生成に失敗しました。元画像を使用します:', thumbErr);
@@ -462,13 +512,7 @@ const ImageGenerator = () => {
       }
     } catch (err) {
       const errorMessage = err.message || 'エラーが発生しました';
-      console.error('画像生成エラー詳細:', {
-        message: errorMessage,
-        error: err,
-        stack: err.stack
-      });
-      setError(errorMessage);
-      // エラーが発生してもローディング状態を解除
+      presentError(errorMessage, err);
       setLoading(false);
     }
   };
@@ -505,8 +549,7 @@ const ImageGenerator = () => {
       setMode('edit'); // ファイルアップロード時は自動で修正モードに
       setError(null);
     } catch (err) {
-      setError('画像の読み込みに失敗しました');
-      console.error(err);
+      presentError('画像の読み込みに失敗しました', err);
     }
   };
 
@@ -586,8 +629,7 @@ const ImageGenerator = () => {
       ));
       updatedList.forEach(syncImageRecord);
     } catch (err) {
-      setError('ダウンロードに失敗しました');
-      console.error('ダウンロードエラー:', err);
+      presentError('ダウンロードに失敗しました', err);
     }
   };
 
@@ -735,7 +777,7 @@ const ImageGenerator = () => {
     }
 
     // サムネイルを生成（200x200px）
-    generateThumbnail(image.fullImageUrl || image.imageUrl || image.thumbnailUrl, 200)
+    requestThumbnailFromApi(image.fullImageUrl || image.imageUrl || image.thumbnailUrl, 200)
       .then(thumbnail => {
         const updatedStyle = {
           ...targetStyle,
@@ -757,8 +799,7 @@ const ImageGenerator = () => {
         alert('スタイルのサムネイルを設定しました！');
       })
       .catch(err => {
-        console.error('サムネイル生成に失敗しました:', err);
-        alert('サムネイルの設定に失敗しました');
+        presentError('サムネイルの設定に失敗しました', err);
       });
   };
 
@@ -842,7 +883,7 @@ const ImageGenerator = () => {
   }, [syncStyleRecord]);
 
   // 画像を削除
-  const handleDeleteImage = (imageId, e) => {
+  const handleDeleteImage = async (imageId, e) => {
     e.stopPropagation(); // 親要素のクリックイベントを防ぐ
     if (window.confirm('この画像を削除しますか？')) {
       try {
@@ -867,10 +908,9 @@ const ImageGenerator = () => {
         if (quickLookImage && quickLookImage.id === imageId) {
           setQuickLookImage(null);
         }
-        deleteImageRecord(imageId);
+        await deleteImageRecord(imageId);
       } catch (err) {
-        console.error('画像の削除に失敗しました:', err);
-        setError('画像の削除に失敗しました');
+        presentError('画像の削除に失敗しました', err);
       }
     }
   };
@@ -931,8 +971,7 @@ const ImageGenerator = () => {
       ));
       syncImageRecord(updatedImage);
     } catch (err) {
-      console.error('ダウンロードエラー:', err);
-      setError('ダウンロードに失敗しました');
+      presentError('ダウンロードに失敗しました', err);
     }
   };
 
@@ -1286,9 +1325,8 @@ const ImageGenerator = () => {
                   <img 
                     src={currentImage.fullImageUrl || currentImage.imageUrl || currentImage.thumbnailUrl} 
                     alt="Generated" 
-                    onError={(e) => {
-                      console.error('画像の読み込みエラー:', currentImage);
-                      setError('画像の表示に失敗しました');
+                    onError={() => {
+                      presentError('画像の表示に失敗しました', currentImage);
                     }}
                   />
                 </div>
@@ -1507,6 +1545,17 @@ const ImageGenerator = () => {
                 </div>
               ))
             )}
+            {hasMoreHistory && (
+              <button
+                type="button"
+                className="load-more-button"
+                onClick={() => loadHistories()}
+                disabled={historyLoading}
+                style={{ marginTop: '12px' }}
+              >
+                {historyLoading ? '読み込み中...' : 'さらに読み込む'}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1637,8 +1686,7 @@ const ImageGenerator = () => {
 
 // プロンプトモードコンポーネント
 const PromptMaker = ({ onStyleCreated = () => {} }) => {
-  const { user, session } = useAuth();
-  const supabaseToken = session?.access_token;
+  const { user } = useAuth();
   const [masterPrompt, setMasterPrompt] = useState('');
   const [yamlData, setYamlData] = useState(null);
   const [selectedField, setSelectedField] = useState(null);
@@ -1648,6 +1696,7 @@ const PromptMaker = ({ onStyleCreated = () => {} }) => {
   const [templateName, setTemplateName] = useState('');
   const [isParsing, setIsParsing] = useState(false); // プロンプト解析中のローディング状態
   const [parseError, setParseError] = useState(null); // 解析エラー
+  const [templateError, setTemplateError] = useState(null);
   const [selectedOptionIndex, setSelectedOptionIndex] = useState(0); // 選択肢モード内での選択インデックス
   const [currentMode, setCurrentMode] = useState('field'); // 'field' | 'select' | 'text' - 現在のモード
   const [isEditingYaml, setIsEditingYaml] = useState(false); // YAML編集モード
@@ -1656,13 +1705,18 @@ const PromptMaker = ({ onStyleCreated = () => {} }) => {
   const [isGeneratingOptions, setIsGeneratingOptions] = useState(false); // AI選択肢生成中
   const [isEditingOptions, setIsEditingOptions] = useState(false); // 選択肢編集モード
   const [editingOptionsText, setEditingOptionsText] = useState(''); // 編集中の選択肢テキスト
+  const surfaceTemplateError = useCallback((message, detail) => {
+    console.error(message, detail);
+    setTemplateError(message);
+  }, []);
+
   const persistTemplate = useCallback(async (template) => {
     if (!user?.id) return;
     try {
-      await supabaseRest('/rest/v1/prompt_templates', {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates' },
-        body: {
+      await requireSession(supabase);
+      const { error } = await supabase
+        .from('prompt_templates')
+        .upsert({
           id: template.id,
           user_id: user.id,
           name: template.name,
@@ -1670,17 +1724,20 @@ const PromptMaker = ({ onStyleCreated = () => {} }) => {
           original_prompt: template.originalPrompt || '',
           field_options: template.fieldOptions || {},
           created_at: template.createdAt || new Date().toISOString(),
-        },
-        accessToken: supabaseToken,
-      });
+        }, { onConflict: 'id' });
+      if (error) {
+        throw error;
+      }
+      setTemplateError(null);
     } catch (err) {
-      console.error('テンプレートの保存に失敗しました', err);
+      surfaceTemplateError('テンプレートの保存に失敗しました', err);
     }
-  }, [user?.id, supabaseToken]);
+  }, [user?.id, surfaceTemplateError]);
 
   useEffect(() => {
-    if (!user?.id || !supabaseToken) {
+    if (!user?.id) {
       setTemplates([]);
+      setTemplateError(null);
       return;
     }
 
@@ -1688,12 +1745,18 @@ const PromptMaker = ({ onStyleCreated = () => {} }) => {
 
     const fetchTemplates = async () => {
       try {
-        const rows = await supabaseRest(`/rest/v1/prompt_templates?user_id=eq.${encodeURIComponent(user.id)}&select=*&order=created_at.desc`, {
-          accessToken: supabaseToken,
-        });
+        await requireSession(supabase);
+        const { data, error } = await supabase
+          .from('prompt_templates')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+        if (error) {
+          throw error;
+        }
         if (!active) return;
-        setTemplates(Array.isArray(rows)
-          ? rows.map(row => ({
+        setTemplates(Array.isArray(data)
+          ? data.map(row => ({
               id: row.id,
               name: row.name,
               yaml: row.yaml || {},
@@ -1702,8 +1765,10 @@ const PromptMaker = ({ onStyleCreated = () => {} }) => {
               createdAt: row.created_at,
             }))
           : []);
+        setTemplateError(null);
       } catch (err) {
-        console.error('テンプレートの取得に失敗しました', err);
+        if (!active) return;
+        surfaceTemplateError('テンプレートの取得に失敗しました', err);
       }
     };
 
@@ -1712,7 +1777,7 @@ const PromptMaker = ({ onStyleCreated = () => {} }) => {
     return () => {
       active = false;
     };
-  }, [user?.id, supabaseToken]);
+  }, [user?.id, surfaceTemplateError]);
 
   // YAMLフィールドを取得
   const getYamlFields = (yaml) => {
@@ -2351,6 +2416,11 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
               ))
             )}
           </div>
+          {templateError && (
+            <div className="error-message" style={{ marginTop: '8px' }}>
+              {templateError}
+            </div>
+          )}
         </div>
 
         {/* 中央: メインエリア */}
