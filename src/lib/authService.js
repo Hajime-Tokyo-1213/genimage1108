@@ -1,5 +1,26 @@
 import { supabase, requireSession } from './supabaseClient.js';
 
+const getEnvVar = (key) => {
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+    return import.meta.env[key];
+  }
+  if (typeof process !== 'undefined' && process.env && process.env[key]) {
+    return process.env[key];
+  }
+  return undefined;
+};
+
+const resolveSiteUrl = () => {
+  const envSiteUrl = getEnvVar('VITE_SITE_URL') || getEnvVar('SITE_URL');
+  if (envSiteUrl) {
+    return envSiteUrl.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return undefined;
+};
+
 const ensureCredentials = (email, password) => {
   if (!email || !password) {
     throw new Error('メールアドレスとパスワードを入力してください');
@@ -16,12 +37,17 @@ export const registerUser = async (username, email, password, client = supabase)
   if (!username) {
     throw new Error('ユーザー名を入力してください');
   }
+  const siteUrl = resolveSiteUrl();
+  const options = {
+    data: { username },
+  };
+  if (siteUrl) {
+    options.emailRedirectTo = `${siteUrl}/auth/callback`;
+  }
   return client.auth.signUp({
     email,
     password,
-    options: {
-      data: { username },
-    },
+    options,
   });
 };
 

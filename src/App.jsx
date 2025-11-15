@@ -4,6 +4,7 @@ import ErrorBoundary from './ErrorBoundary'
 import { AuthProvider } from './contexts/AuthContext'
 import Login from './components/Login'
 import ProtectedRoute from './components/ProtectedRoute'
+import AuthCallback from './components/AuthCallback'
 
 function App() {
   return (
@@ -12,6 +13,8 @@ function App() {
         <Router>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/auth/v1/verify" element={<AuthCallback />} />
             <Route
               path="/image-generator"
               element={

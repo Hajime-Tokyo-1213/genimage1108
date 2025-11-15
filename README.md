@@ -19,7 +19,13 @@ Google Gemini APIとOpenAI APIを使用した画像生成・プロンプト管�
 ```env
 VITE_GEMINI_API_KEY=your_gemini_api_key_here
 VITE_OPENAI_API_KEY=your_openai_api_key_here
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+# 任意: 本番URLを固定したい場合は設定してください
+VITE_SITE_URL=https://your-production-domain.com
 ```
+
+`VITE_SITE_URL` を設定しない場合は、フロントエンドを表示している現在のオリジン（`window.location.origin`）がメールリンクのリダイレクト先として利用されます。
 
 ### ローカル開発
 
@@ -62,6 +68,9 @@ Vercelダッシュボードで以下の環境変数を設定：
    |------|-----|
    | `VITE_GEMINI_API_KEY` | あなたのGemini APIキー |
    | `VITE_OPENAI_API_KEY` | あなたのOpenAI APIキー |
+   | `VITE_SUPABASE_URL` | Supabase プロジェクトのURL |
+   | `VITE_SUPABASE_ANON_KEY` | Supabase anonキー |
+   | `VITE_SITE_URL` | (任意) 本番のフロントエンドURL |
 
 3. 各環境（Production, Preview, Development）に適用するか選択
 4. 「Save」をクリック
@@ -71,6 +80,14 @@ Vercelダッシュボードで以下の環境変数を設定：
 1. 「Deploy」ボタンをクリック
 2. ビルドが完了するまで待機（通常1-2分）
 3. デプロイ完了後、提供されたURLでアプリにアクセス可能
+
+### 5. Supabase 側の設定
+
+1. Supabase ダッシュボード → **Authentication** → **URL Configuration** へ移動
+2. **Site URL** に Vercel の本番 URL（例: `https://your-production-domain.com`）を設定
+3. **Additional Redirect URLs** にローカル開発用のURL（`http://localhost:5173/auth/callback` など）を必要に応じて追加
+
+メールからの確認リンクは `/auth/callback` または `/auth/v1/verify` にリダイレクトされ、アプリ側で自動的にセッションを確立します。
 
 ## APIキーの取得方法
 
