@@ -59,10 +59,26 @@ const ImageGenerator = () => {
     navigate('/login');
   };
   const syncImageRecord = useCallback(async (image) => {
-    if (!user?.id) return;
+    console.log('[syncImageRecord] 呼び出し:', {
+      imageId: image.id,
+      hasUser: !!user?.id,
+      userId: user?.id,
+    });
+
+    if (!user?.id) {
+      console.warn('[syncImageRecord] ユーザーIDがないため保存スキップ');
+      return;
+    }
+
     try {
       await persistImageHistory(image, supabase);
+      console.log('[syncImageRecord] 保存完了:', image.id);
     } catch (err) {
+      console.error('[syncImageRecord] 保存エラー:', {
+        error: err,
+        message: err.message,
+        stack: err.stack,
+      });
       presentError('画像履歴の保存に失敗しました', err);
     }
   }, [user?.id, presentError]);
@@ -77,24 +93,43 @@ const ImageGenerator = () => {
   }, [user?.id, presentError]);
 
   const syncStyleRecord = useCallback(async (style) => {
-    if (!user?.id) return;
+    console.log('[syncStyleRecord] 呼び出し:', {
+      styleId: style.id,
+      styleName: style.name,
+      hasUser: !!user?.id,
+    });
+
+    if (!user?.id) {
+      console.warn('[syncStyleRecord] ユーザーIDがないため保存スキップ');
+      return;
+    }
+
     try {
       await requireSession(supabase);
+      const payload = {
+        id: style.id,
+        user_id: user.id,
+        name: style.name,
+        prompt: style.prompt,
+        thumbnail: style.thumbnail || null,
+        source: style.source || 'manual',
+        created_at: style.createdAt || new Date().toISOString(),
+      };
+
+      console.log('[syncStyleRecord] 送信データ:', payload);
+
       const { error } = await supabase
         .from('image_styles')
-        .upsert({
-          id: style.id,
-          user_id: user.id,
-          name: style.name,
-          prompt: style.prompt,
-          thumbnail: style.thumbnail || null,
-          source: style.source || 'manual',
-          created_at: style.createdAt || new Date().toISOString(),
-        }, { onConflict: 'id' });
+        .upsert(payload, { onConflict: 'id' });
+
       if (error) {
+        console.error('[syncStyleRecord] Supabaseエラー:', error);
         throw error;
       }
+
+      console.log('[syncStyleRecord] 保存成功:', style.id);
     } catch (err) {
+      console.error('[syncStyleRecord] 保存エラー:', err);
       presentError('スタイルの保存に失敗しました', err);
     }
   }, [user?.id, presentError]);
@@ -1711,25 +1746,48 @@ const PromptMaker = ({ onStyleCreated = () => {} }) => {
   }, []);
 
   const persistTemplate = useCallback(async (template) => {
-    if (!user?.id) return;
+    console.log('[persistTemplate] 呼び出し:', {
+      templateId: template.id,
+      templateName: template.name,
+      hasUser: !!user?.id,
+    });
+
+    if (!user?.id) {
+      console.warn('[persistTemplate] ユーザーIDがないため保存スキップ');
+      return;
+    }
+
     try {
       await requireSession(supabase);
+      const payload = {
+        id: template.id,
+        user_id: user.id,
+        name: template.name,
+        yaml: template.yaml || {},
+        original_prompt: template.originalPrompt || '',
+        field_options: template.fieldOptions || {},
+        created_at: template.createdAt || new Date().toISOString(),
+      };
+
+      console.log('[persistTemplate] 送信データ:', {
+        id: payload.id,
+        name: payload.name,
+        hasYaml: !!payload.yaml,
+      });
+
       const { error } = await supabase
         .from('prompt_templates')
-        .upsert({
-          id: template.id,
-          user_id: user.id,
-          name: template.name,
-          yaml: template.yaml || {},
-          original_prompt: template.originalPrompt || '',
-          field_options: template.fieldOptions || {},
-          created_at: template.createdAt || new Date().toISOString(),
-        }, { onConflict: 'id' });
+        .upsert(payload, { onConflict: 'id' });
+
       if (error) {
+        console.error('[persistTemplate] Supabaseエラー:', error);
         throw error;
       }
+
+      console.log('[persistTemplate] 保存成功:', template.id);
       setTemplateError(null);
     } catch (err) {
+      console.error('[persistTemplate] 保存エラー:', err);
       surfaceTemplateError('テンプレートの保存に失敗しました', err);
     }
   }, [user?.id, surfaceTemplateError]);
