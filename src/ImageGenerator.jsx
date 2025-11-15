@@ -1,9 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuth } from './contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import './ImageGenerator.css';
+import { supabase, requireSession } from './lib/supabaseClient.js';
+import { persistImageHistory, removeImageHistory } from './lib/authService.js';
+
+const HISTORY_PAGE_SIZE = 10;
+
+const createDefaultStyles = () => ([
+  { id: '1', name: '和風アート', prompt: '日本の伝統的な和風アートスタイル、浮世絵風、美しい色彩', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
+  { id: '2', name: '未来都市', prompt: '未来の都市、サイバーパンク、ネオンライト、高層ビル', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
+  { id: '3', name: 'ファンタジー', prompt: 'ファンタジー世界、魔法、幻想的な風景、エピックな構図', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
+  { id: '4', name: '水彩画', prompt: '水彩画スタイル、柔らかい色合い、繊細な筆使い', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
+]);
 
 const ImageGenerator = () => {
   const { user, logout } = useAuth();
@@ -33,235 +44,193 @@ const ImageGenerator = () => {
   const [selectedStyleId, setSelectedStyleId] = useState(null); // 選択されたスタイルID
   const [objectInputs, setObjectInputs] = useState({ person: '', background: '', other: '' }); // オブジェクト入力
   const [yamlInput, setYamlInput] = useState(''); // YAML形式の入力
+  const [historyPage, setHistoryPage] = useState(0);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const base64CacheRef = useRef(new Map());
+
+  const presentError = useCallback((message, detail) => {
+    console.error(message, detail);
+    setError(message);
+  }, []);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
-
-  // localStorageから履歴を読み込み（最新10枚のみ、サムネイルのみ保存）
-  useEffect(() => {
+  const syncImageRecord = useCallback(async (image) => {
+    if (!user?.id) return;
     try {
-      const saved = localStorage.getItem('imageHistory');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          // 配列であることを確認し、各画像に必要なプロパティがあるかチェック
-          if (Array.isArray(parsed)) {
-            // 新形式（thumbnailUrl）と旧形式（imageUrl）の両方に対応
-            const validImages = parsed.filter(img => 
-              img && 
-              img.id && 
-              (img.thumbnailUrl || img.imageUrl) && 
-              typeof (img.thumbnailUrl || img.imageUrl) === 'string'
-            ).map(img => {
-              // 旧形式のデータを新形式に変換
-              if (img.imageUrl && !img.thumbnailUrl) {
-                return {
-                  ...img,
-                  thumbnailUrl: img.imageUrl, // 旧データはそのまま使用
-                  fullImageUrl: img.imageUrl,
-                  title: img.title || '',
-                  saved: img.saved || false
-                };
-              }
-              return {
-                ...img,
-                title: img.title || '',
-                saved: img.saved || false
-              };
-            });
-            if (validImages.length > 0) {
-              // 最新10枚のみ保持
-              const sortedImages = validImages
-                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-                .slice(0, 10);
-              setImages(sortedImages);
-              console.log(`画像履歴を読み込みました（${sortedImages.length}枚）`);
-              
-              // 読み込んだ枚数が元の枚数より少ない場合は、localStorageも更新
-              if (sortedImages.length < validImages.length) {
-                const imagesToSave = sortedImages.map(img => ({
-                  id: img.id,
-                  prompt: img.prompt,
-                  thumbnailUrl: img.thumbnailUrl,
-                  createdAt: img.createdAt,
-                  revision: img.revision || 0,
-                  title: img.title || '',
-                  saved: img.saved || false
-                }));
-                localStorage.setItem('imageHistory', JSON.stringify(imagesToSave));
-              }
-            } else {
-              console.warn('有効な画像履歴が見つかりませんでした');
-            }
-          } else {
-            console.warn('画像履歴の形式が正しくありません（配列ではありません）');
-            localStorage.removeItem('imageHistory');
-          }
-        } catch (e) {
-          console.error('履歴のJSONパースに失敗しました', e);
-          // 破損したデータをクリア
-          localStorage.removeItem('imageHistory');
-        }
-      }
-    } catch (e) {
-      console.error('localStorageへのアクセスに失敗しました', e);
+      await persistImageHistory(image, supabase);
+    } catch (err) {
+      presentError('画像履歴の保存に失敗しました', err);
     }
-  }, []);
+  }, [user?.id, presentError]);
 
-  // v5: localStorageからスタイルを読み込み
-  useEffect(() => {
-    // デフォルトスタイルの初期化関数（useEffect内で定義）
-    const initializeDefaultStyles = () => {
-      const defaultStyles = [
-        { id: '1', name: '和風アート', prompt: '日本の伝統的な和風アートスタイル、浮世絵風、美しい色彩', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
-        { id: '2', name: '未来都市', prompt: '未来の都市、サイバーパンク、ネオンライト、高層ビル', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
-        { id: '3', name: 'ファンタジー', prompt: 'ファンタジー世界、魔法、幻想的な風景、エピックな構図', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
-        { id: '4', name: '水彩画', prompt: '水彩画スタイル、柔らかい色合い、繊細な筆使い', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
-      ];
-      setStyles(defaultStyles);
-      try {
-        localStorage.setItem('imageStyles', JSON.stringify(defaultStyles));
-      } catch (e) {
-        console.error('デフォルトスタイルの保存に失敗しました', e);
-      }
-    };
-
+  const deleteImageRecord = useCallback(async (imageId) => {
+    if (!user?.id) return;
     try {
-      const saved = localStorage.getItem('imageStyles');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          // 配列であることを確認し、各スタイルに必要なプロパティがあるかチェック
-          if (Array.isArray(parsed)) {
-            const validStyles = parsed.filter(style => 
-              style && 
-              style.id && 
-              style.name && 
-              style.prompt
-            ).map(style => ({
-              ...style,
-              thumbnail: style.thumbnail || null,
-              source: style.source || 'manual',
-              createdAt: style.createdAt || new Date().toISOString()
-            }));
-            if (validStyles.length > 0) {
-              setStyles(validStyles);
-            } else {
-              console.warn('有効なスタイルが見つかりませんでした。デフォルトスタイルを使用します。');
-              initializeDefaultStyles();
-            }
-          } else {
-            console.warn('スタイルの形式が正しくありません（配列ではありません）。デフォルトスタイルを使用します。');
-            initializeDefaultStyles();
-          }
-        } catch (e) {
-          console.error('スタイルのJSONパースに失敗しました', e);
-          // 破損したデータをクリア
-          localStorage.removeItem('imageStyles');
-          initializeDefaultStyles();
-        }
+      await removeImageHistory(imageId, supabase);
+    } catch (err) {
+      presentError('画像履歴の削除に失敗しました', err);
+    }
+  }, [user?.id, presentError]);
+
+  const syncStyleRecord = useCallback(async (style) => {
+    if (!user?.id) return;
+    try {
+      await requireSession(supabase);
+      const { error } = await supabase
+        .from('image_styles')
+        .upsert({
+          id: style.id,
+          user_id: user.id,
+          name: style.name,
+          prompt: style.prompt,
+          thumbnail: style.thumbnail || null,
+          source: style.source || 'manual',
+          created_at: style.createdAt || new Date().toISOString(),
+        }, { onConflict: 'id' });
+      if (error) {
+        throw error;
+      }
+    } catch (err) {
+      presentError('スタイルの保存に失敗しました', err);
+    }
+  }, [user?.id, presentError]);
+
+  const deleteStyleRecord = useCallback(async (styleId) => {
+    if (!user?.id) return;
+    try {
+      await requireSession(supabase);
+      const { error } = await supabase
+        .from('image_styles')
+        .delete()
+        .eq('id', styleId)
+        .eq('user_id', user.id);
+      if (error) {
+        throw error;
+      }
+    } catch (err) {
+      presentError('スタイルの削除に失敗しました', err);
+    }
+  }, [user?.id, presentError]);
+
+  const loadStyles = useCallback(async () => {
+    if (!user?.id) {
+      setStyles(createDefaultStyles());
+      return;
+    }
+    try {
+      await requireSession(supabase);
+      const { data, error } = await supabase
+        .from('image_styles')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) {
+        throw error;
+      }
+      if (Array.isArray(data) && data.length > 0) {
+        setStyles(data.map(row => ({
+          id: row.id,
+          name: row.name,
+          prompt: row.prompt,
+          thumbnail: row.thumbnail || null,
+          source: row.source || 'manual',
+          createdAt: row.created_at,
+        })));
       } else {
-        // デフォルトスタイル
-        initializeDefaultStyles();
+        setStyles(createDefaultStyles());
       }
-    } catch (e) {
-      console.error('localStorageへのアクセスに失敗しました', e);
-      initializeDefaultStyles();
+    } catch (err) {
+      presentError('スタイルの読み込みに失敗しました', err);
+      setStyles(createDefaultStyles());
     }
-  }, []);
+  }, [user?.id, presentError]);
 
-  // v5: スタイルをlocalStorageに保存
-  useEffect(() => {
-    if (styles.length > 0) {
-      localStorage.setItem('imageStyles', JSON.stringify(styles));
+  const loadHistories = useCallback(async ({ reset = false } = {}) => {
+    if (!user?.id) {
+      setImages([]);
+      setHasMoreHistory(false);
+      return;
     }
-  }, [styles]);
-
-  // 履歴をlocalStorageに保存（最新10枚のみ、サムネイルのみ保存）
-  useEffect(() => {
-    if (images.length > 0) {
-      try {
-        // 最新10枚のみ保存（古いものから削除）
-        const imagesToSave = [...images]
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) // 新しい順にソート
-          .slice(0, 10) // 最新10枚のみ
-          .map(img => ({
-            // サムネイルのみ保存（フルサイズ画像は保存しない）
-            id: img.id,
-            prompt: img.prompt,
-            thumbnailUrl: img.thumbnailUrl || img.imageUrl, // サムネイルのみ
-            createdAt: img.createdAt,
-            revision: img.revision || 0,
-            title: img.title || '',
-            saved: img.saved || false
-          }));
-        
-        const jsonString = JSON.stringify(imagesToSave);
-        localStorage.setItem('imageHistory', jsonString);
-        console.log(`画像履歴を保存しました（${imagesToSave.length}枚、サムネイルのみ）`);
-        
-        // 保存した枚数が元の枚数より少ない場合は、状態も更新
-        if (imagesToSave.length < images.length) {
-          console.warn(`画像履歴が多すぎるため、最新${imagesToSave.length}枚のみ保持します`);
-          // フルサイズ画像はメモリ上に保持（localStorageには保存しない）
-          const updatedImages = images
-            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-            .slice(0, 10);
-          setImages(updatedImages);
-        }
-      } catch (err) {
-        if (err.name === 'QuotaExceededError') {
-          console.error('localStorageの容量が不足しています。古い画像を削除します。');
-          // さらに少ない枚数で再試行（最新5枚のみ）
-          try {
-            const imagesToSave = [...images]
-              .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-              .slice(0, 5)
-              .map(img => ({
-                id: img.id,
-                prompt: img.prompt,
-                thumbnailUrl: img.thumbnailUrl || img.imageUrl,
-                createdAt: img.createdAt,
-                revision: img.revision || 0,
-                title: img.title || '',
-                saved: img.saved || false
-              }));
-            localStorage.setItem('imageHistory', JSON.stringify(imagesToSave));
-            const updatedImages = images
-              .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-              .slice(0, 5);
-            setImages(updatedImages);
-            setError('画像履歴が多すぎるため、最新5枚のみ保持しました');
-            console.log('古い画像を削除して保存しました（5枚）');
-          } catch (retryErr) {
-            console.error('再試行も失敗しました:', retryErr);
-            // 最後の手段：履歴をクリア
-            localStorage.removeItem('imageHistory');
-            setImages([]);
-            setError('画像履歴の保存に失敗しました。履歴をクリアしました。');
+    setHistoryLoading(true);
+    try {
+      await requireSession(supabase);
+      const page = reset ? 0 : historyPage;
+      const from = page * HISTORY_PAGE_SIZE;
+      const to = from + HISTORY_PAGE_SIZE - 1;
+      const { data, error } = await supabase
+        .from('image_histories')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+      if (error) {
+        throw error;
+      }
+      const normalized = Array.isArray(data)
+        ? data.map(row => ({
+            id: row.id,
+            prompt: row.prompt,
+            thumbnailUrl: row.thumbnail_url,
+            createdAt: row.created_at,
+            revision: row.revision || 0,
+            title: row.title || '',
+            saved: row.saved || false,
+          }))
+        : [];
+      setImages(prev => {
+        const next = reset ? [] : [...prev];
+        normalized.forEach(item => {
+          if (!next.find(existing => existing.id === item.id)) {
+            next.push(item);
           }
-        } else {
-          console.error('画像履歴の保存に失敗しました:', err);
-          setError('画像履歴の保存に失敗しました');
-        }
-      }
+        });
+        return next.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      });
+      setHistoryPage(page + 1);
+      setHasMoreHistory(normalized.length === HISTORY_PAGE_SIZE);
+    } catch (err) {
+      presentError('履歴の読み込みに失敗しました', err);
+    } finally {
+      setHistoryLoading(false);
     }
-  }, [images]);
+  }, [user?.id, historyPage, presentError]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setImages([]);
+      setStyles(createDefaultStyles());
+      setHistoryPage(0);
+      setHasMoreHistory(false);
+      return;
+    }
+    setHistoryPage(0);
+    setHasMoreHistory(false);
+    loadStyles();
+    loadHistories({ reset: true });
+  }, [user?.id, loadStyles, loadHistories]);
 
   // 画像をBase64に変換
-  const imageToBase64 = (file) => {
+  const imageToBase64 = useCallback((file) => {
+    const cacheKey = `${file.name}-${file.size}-${file.lastModified}`;
+    if (base64CacheRef.current.has(cacheKey)) {
+      return Promise.resolve(base64CacheRef.current.get(cacheKey));
+    }
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
-        const base64 = reader.result.split(',')[1]; // data:image/...;base64, の部分を除去
+        const base64 = reader.result.split(',')[1];
+        base64CacheRef.current.set(cacheKey, base64);
         resolve(base64);
       };
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
-  };
+  }, []);
 
   // サムネイル生成関数（F-01）
   const generateThumbnail = (imageUrl, maxSize = 200) => {
@@ -287,6 +256,16 @@ const ImageGenerator = () => {
       img.onerror = reject;
       img.src = imageUrl;
     });
+  };
+
+  const requestThumbnailFromApi = async (imageUrl, maxSize = 200) => {
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return await generateThumbnail(imageUrl, maxSize);
+    } catch (err) {
+      console.warn('サムネイルAPIが利用できません。ローカル生成にフォールバックします', err);
+      return generateThumbnail(imageUrl, maxSize);
+    }
   };
 
   // Base64文字列からBase64データを抽出（data:image/...;base64, の部分を除去）
@@ -330,8 +309,7 @@ const ImageGenerator = () => {
             setMode('edit'); // 修正モードに切り替え
             setError(null);
           } catch (err) {
-            console.error('画像データの抽出に失敗しました:', err);
-            setError('画像データの処理に失敗しました');
+            presentError('画像データの処理に失敗しました', err);
           }
         } else {
           console.warn('ドラッグされた画像に利用可能なデータがありません');
@@ -473,7 +451,7 @@ const ImageGenerator = () => {
       // サムネイルを生成
       let thumbnailUrl = imageDataUrl; // フォールバック用
       try {
-        thumbnailUrl = await generateThumbnail(imageDataUrl, 200);
+        thumbnailUrl = await requestThumbnailFromApi(imageDataUrl, 200);
         console.log('サムネイル生成成功');
       } catch (thumbErr) {
         console.warn('サムネイル生成に失敗しました。元画像を使用します:', thumbErr);
@@ -527,19 +505,14 @@ const ImageGenerator = () => {
         setCurrentImageId(newImage.id);
         setShowRegenerateForm(false);
         console.log('画像生成成功:', { imageId: newImage.id, revision: newImage.revision });
+        await syncImageRecord(newImage);
       } catch (stateErr) {
         console.error('状態更新エラー:', stateErr);
         throw new Error(`画像の保存に失敗しました: ${stateErr.message}`);
       }
     } catch (err) {
       const errorMessage = err.message || 'エラーが発生しました';
-      console.error('画像生成エラー詳細:', {
-        message: errorMessage,
-        error: err,
-        stack: err.stack
-      });
-      setError(errorMessage);
-      // エラーが発生してもローディング状態を解除
+      presentError(errorMessage, err);
       setLoading(false);
     }
   };
@@ -576,8 +549,7 @@ const ImageGenerator = () => {
       setMode('edit'); // ファイルアップロード時は自動で修正モードに
       setError(null);
     } catch (err) {
-      setError('画像の読み込みに失敗しました');
-      console.error(err);
+      presentError('画像の読み込みに失敗しました', err);
     }
   };
 
@@ -645,16 +617,19 @@ const ImageGenerator = () => {
 
       const blob = await zip.generateAsync({ type: 'blob' });
       saveAs(blob, 'generated-images.zip');
-      
+
       // 保存済みフラグを更新
-      setImages(prev => prev.map(img => 
+      const updatedList = images
+        .filter(img => img && selectedImageIds.has(img.id))
+        .map(img => ({ ...img, saved: true }));
+      setImages(prev => prev.map(img =>
         selectedImageIds.has(img.id)
           ? { ...img, saved: true }
           : img
       ));
+      updatedList.forEach(syncImageRecord);
     } catch (err) {
-      setError('ダウンロードに失敗しました');
-      console.error('ダウンロードエラー:', err);
+      presentError('ダウンロードに失敗しました', err);
     }
   };
 
@@ -767,7 +742,6 @@ const ImageGenerator = () => {
     if (!image) return;
 
     // スタイル選択モーダルを表示
-    const styleOptions = styles.map(s => s.name).join('\n');
     const styleIndex = window.prompt(
       `スタイルを選択してください（番号を入力）:\n${styles.map((s, i) => `${i + 1}. ${s.name}`).join('\n')}\n\n新規スタイルを作成する場合は「new」と入力`,
       ''
@@ -803,7 +777,7 @@ const ImageGenerator = () => {
     }
 
     // サムネイルを生成（200x200px）
-    generateThumbnail(image.fullImageUrl || image.imageUrl || image.thumbnailUrl, 200)
+    requestThumbnailFromApi(image.fullImageUrl || image.imageUrl || image.thumbnailUrl, 200)
       .then(thumbnail => {
         const updatedStyle = {
           ...targetStyle,
@@ -815,16 +789,17 @@ const ImageGenerator = () => {
           setStyles(prev => [...prev, updatedStyle]);
         } else {
           // 既存スタイルを更新
-          setStyles(prev => prev.map(s => 
+          setStyles(prev => prev.map(s =>
             s.id === targetStyle.id ? updatedStyle : s
           ));
         }
 
+        syncStyleRecord(updatedStyle);
+
         alert('スタイルのサムネイルを設定しました！');
       })
       .catch(err => {
-        console.error('サムネイル生成に失敗しました:', err);
-        alert('サムネイルの設定に失敗しました');
+        presentError('サムネイルの設定に失敗しました', err);
       });
   };
 
@@ -846,6 +821,7 @@ const ImageGenerator = () => {
     };
 
     setStyles(prev => [...prev, newStyle]);
+    syncStyleRecord(newStyle);
     setNewStyleName('');
     setNewStylePrompt('');
     setShowAddStyleForm(false);
@@ -854,6 +830,7 @@ const ImageGenerator = () => {
   // v5: スタイルを削除
   const handleDeleteStyle = (styleId) => {
     setStyles(prev => prev.filter(s => s.id !== styleId));
+    deleteStyleRecord(styleId);
   };
 
   // スタイルを編集開始
@@ -875,14 +852,22 @@ const ImageGenerator = () => {
       return;
     }
 
-    setStyles(prev => prev.map(s => 
-      s.id === editingStyleId 
+    const targetStyle = styles.find(s => s.id === editingStyleId);
+    const updatedStyle = targetStyle
+      ? { ...targetStyle, name: editStyleName, prompt: editStylePrompt }
+      : null;
+
+    setStyles(prev => prev.map(s =>
+      s.id === editingStyleId
         ? { ...s, name: editStyleName, prompt: editStylePrompt }
         : s
     ));
     setEditingStyleId(null);
     setEditStyleName('');
     setEditStylePrompt('');
+    if (updatedStyle) {
+      syncStyleRecord(updatedStyle);
+    }
   };
 
   // スタイル編集をキャンセル
@@ -892,8 +877,13 @@ const ImageGenerator = () => {
     setEditStylePrompt('');
   };
 
+  const handleStyleCreatedFromPrompt = useCallback((style) => {
+    setStyles(prev => [...prev, style]);
+    syncStyleRecord(style);
+  }, [syncStyleRecord]);
+
   // 画像を削除
-  const handleDeleteImage = (imageId, e) => {
+  const handleDeleteImage = async (imageId, e) => {
     e.stopPropagation(); // 親要素のクリックイベントを防ぐ
     if (window.confirm('この画像を削除しますか？')) {
       try {
@@ -902,30 +892,7 @@ const ImageGenerator = () => {
             console.warn('images状態が配列ではありません');
             return [];
           }
-          const filtered = prev.filter(img => img && img.id !== imageId);
-          // localStorageも更新
-          try {
-            if (filtered.length > 0) {
-              const imagesToSave = filtered
-                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-                .slice(0, 10)
-                .map(img => ({
-                  id: img.id,
-                  prompt: img.prompt,
-                  thumbnailUrl: img.thumbnailUrl || img.imageUrl,
-                  createdAt: img.createdAt,
-                  revision: img.revision || 0,
-                  title: img.title || '',
-                  saved: img.saved || false
-                }));
-              localStorage.setItem('imageHistory', JSON.stringify(imagesToSave));
-            } else {
-              localStorage.removeItem('imageHistory');
-            }
-          } catch (storageErr) {
-            console.error('localStorageへの保存に失敗しました:', storageErr);
-          }
-          return filtered;
+          return prev.filter(img => img && img.id !== imageId);
         });
         // 選択状態からも削除
         setSelectedImageIds(prev => {
@@ -941,9 +908,9 @@ const ImageGenerator = () => {
         if (quickLookImage && quickLookImage.id === imageId) {
           setQuickLookImage(null);
         }
+        await deleteImageRecord(imageId);
       } catch (err) {
-        console.error('画像の削除に失敗しました:', err);
-        setError('画像の削除に失敗しました');
+        presentError('画像の削除に失敗しました', err);
       }
     }
   };
@@ -956,13 +923,18 @@ const ImageGenerator = () => {
 
   // F-03: タイトル保存
   const handleSaveTitle = (imageId) => {
-    setImages(prev => prev.map(img => 
-      img.id === imageId 
+    const targetImage = images.find(img => img.id === imageId);
+    const updatedImage = targetImage ? { ...targetImage, title: editingTitle } : null;
+    setImages(prev => prev.map(img =>
+      img.id === imageId
         ? { ...img, title: editingTitle }
         : img
     ));
     setEditingTitleId(null);
     setEditingTitle('');
+    if (updatedImage) {
+      syncImageRecord(updatedImage);
+    }
   };
 
   // F-04: クイックルック表示
@@ -989,16 +961,17 @@ const ImageGenerator = () => {
       link.href = imageUrl;
       link.download = `generated-image-${image.id}-${image.title || 'untitled'}.png`;
       link.click();
-      
+
       // 保存済みフラグを更新
-      setImages(prev => prev.map(img => 
-        img.id === imageId 
+      const updatedImage = { ...image, saved: true };
+      setImages(prev => prev.map(img =>
+        img.id === imageId
           ? { ...img, saved: true }
           : img
       ));
+      syncImageRecord(updatedImage);
     } catch (err) {
-      console.error('ダウンロードエラー:', err);
-      setError('ダウンロードに失敗しました');
+      presentError('ダウンロードに失敗しました', err);
     }
   };
 
@@ -1352,9 +1325,8 @@ const ImageGenerator = () => {
                   <img 
                     src={currentImage.fullImageUrl || currentImage.imageUrl || currentImage.thumbnailUrl} 
                     alt="Generated" 
-                    onError={(e) => {
-                      console.error('画像の読み込みエラー:', currentImage);
-                      setError('画像の表示に失敗しました');
+                    onError={() => {
+                      presentError('画像の表示に失敗しました', currentImage);
                     }}
                   />
                 </div>
@@ -1573,11 +1545,22 @@ const ImageGenerator = () => {
                 </div>
               ))
             )}
+            {hasMoreHistory && (
+              <button
+                type="button"
+                className="load-more-button"
+                onClick={() => loadHistories()}
+                disabled={historyLoading}
+                style={{ marginTop: '12px' }}
+              >
+                {historyLoading ? '読み込み中...' : 'さらに読み込む'}
+              </button>
+            )}
           </div>
         </div>
       </div>
       ) : (
-        <PromptMaker />
+        <PromptMaker onStyleCreated={handleStyleCreatedFromPrompt} />
       )}
 
       {/* F-04: クイックルックモーダル */}
@@ -1702,7 +1685,8 @@ const ImageGenerator = () => {
 };
 
 // プロンプトモードコンポーネント
-const PromptMaker = () => {
+const PromptMaker = ({ onStyleCreated = () => {} }) => {
+  const { user } = useAuth();
   const [masterPrompt, setMasterPrompt] = useState('');
   const [yamlData, setYamlData] = useState(null);
   const [selectedField, setSelectedField] = useState(null);
@@ -1712,6 +1696,7 @@ const PromptMaker = () => {
   const [templateName, setTemplateName] = useState('');
   const [isParsing, setIsParsing] = useState(false); // プロンプト解析中のローディング状態
   const [parseError, setParseError] = useState(null); // 解析エラー
+  const [templateError, setTemplateError] = useState(null);
   const [selectedOptionIndex, setSelectedOptionIndex] = useState(0); // 選択肢モード内での選択インデックス
   const [currentMode, setCurrentMode] = useState('field'); // 'field' | 'select' | 'text' - 現在のモード
   const [isEditingYaml, setIsEditingYaml] = useState(false); // YAML編集モード
@@ -1720,26 +1705,79 @@ const PromptMaker = () => {
   const [isGeneratingOptions, setIsGeneratingOptions] = useState(false); // AI選択肢生成中
   const [isEditingOptions, setIsEditingOptions] = useState(false); // 選択肢編集モード
   const [editingOptionsText, setEditingOptionsText] = useState(''); // 編集中の選択肢テキスト
-
-  // localStorageからテンプレートを読み込み
-  useEffect(() => {
-    const saved = localStorage.getItem('promptTemplates');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setTemplates(parsed);
-      } catch (e) {
-        console.error('テンプレートの読み込みに失敗しました', e);
-      }
-    }
+  const surfaceTemplateError = useCallback((message, detail) => {
+    console.error(message, detail);
+    setTemplateError(message);
   }, []);
 
-  // テンプレートをlocalStorageに保存
-  useEffect(() => {
-    if (templates.length > 0) {
-      localStorage.setItem('promptTemplates', JSON.stringify(templates));
+  const persistTemplate = useCallback(async (template) => {
+    if (!user?.id) return;
+    try {
+      await requireSession(supabase);
+      const { error } = await supabase
+        .from('prompt_templates')
+        .upsert({
+          id: template.id,
+          user_id: user.id,
+          name: template.name,
+          yaml: template.yaml || {},
+          original_prompt: template.originalPrompt || '',
+          field_options: template.fieldOptions || {},
+          created_at: template.createdAt || new Date().toISOString(),
+        }, { onConflict: 'id' });
+      if (error) {
+        throw error;
+      }
+      setTemplateError(null);
+    } catch (err) {
+      surfaceTemplateError('テンプレートの保存に失敗しました', err);
     }
-  }, [templates]);
+  }, [user?.id, surfaceTemplateError]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setTemplates([]);
+      setTemplateError(null);
+      return;
+    }
+
+    let active = true;
+
+    const fetchTemplates = async () => {
+      try {
+        await requireSession(supabase);
+        const { data, error } = await supabase
+          .from('prompt_templates')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+        if (error) {
+          throw error;
+        }
+        if (!active) return;
+        setTemplates(Array.isArray(data)
+          ? data.map(row => ({
+              id: row.id,
+              name: row.name,
+              yaml: row.yaml || {},
+              originalPrompt: row.original_prompt || '',
+              fieldOptions: row.field_options || {},
+              createdAt: row.created_at,
+            }))
+          : []);
+        setTemplateError(null);
+      } catch (err) {
+        if (!active) return;
+        surfaceTemplateError('テンプレートの取得に失敗しました', err);
+      }
+    };
+
+    fetchTemplates();
+
+    return () => {
+      active = false;
+    };
+  }, [user?.id, surfaceTemplateError]);
 
   // YAMLフィールドを取得
   const getYamlFields = (yaml) => {
@@ -2216,6 +2254,7 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
     };
 
     setTemplates(prev => [...prev, newTemplate]);
+    persistTemplate(newTemplate);
     setTemplateName('');
     alert('テンプレートを保存しました');
   };
@@ -2238,28 +2277,17 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
       return;
     }
 
-    try {
-      // localStorageから既存のスタイルを取得
-      const saved = localStorage.getItem('imageStyles');
-      const existingStyles = saved ? JSON.parse(saved) : styles;
+    const newStyle = {
+      id: Date.now().toString(),
+      name: styleName.trim(),
+      prompt: generatedPrompt,
+      thumbnail: null,
+      source: 'prompt-mode',
+      createdAt: new Date().toISOString()
+    };
 
-      const newStyle = {
-        id: Date.now().toString(),
-        name: styleName.trim(),
-        prompt: generatedPrompt,
-        thumbnail: null,
-        source: 'prompt-mode',
-        createdAt: new Date().toISOString()
-      };
-
-      const updatedStyles = [...existingStyles, newStyle];
-      localStorage.setItem('imageStyles', JSON.stringify(updatedStyles));
-      setStyles(updatedStyles);
-      alert('スタイルライブラリに追加しました！');
-    } catch (err) {
-      console.error('スタイルライブラリへの追加に失敗しました:', err);
-      alert('スタイルライブラリへの追加に失敗しました');
-    }
+    onStyleCreated(newStyle);
+    alert('スタイルライブラリに追加しました！');
   };
 
   // テンプレートを読み込み
@@ -2388,6 +2416,11 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
               ))
             )}
           </div>
+          {templateError && (
+            <div className="error-message" style={{ marginTop: '8px' }}>
+              {templateError}
+            </div>
+          )}
         </div>
 
         {/* 中央: メインエリア */}
