@@ -85,7 +85,19 @@ export const ensureFreshSession = async (client = supabase) => {
 };
 
 export const persistImageHistory = async (image, client = supabase) => {
+  console.log('[persistImageHistory] 保存開始:', {
+    imageId: image.id,
+    hasPrompt: !!image.prompt,
+    hasThumbnail: !!image.thumbnailUrl,
+    createdAt: image.createdAt,
+  });
+
   const session = await ensureFreshSession(client);
+  console.log('[persistImageHistory] セッション確認成功:', {
+    userId: session.user.id,
+    sessionExpires: session.expires_at,
+  });
+
   const payload = {
     id: image.id,
     user_id: session.user.id,
@@ -96,12 +108,35 @@ export const persistImageHistory = async (image, client = supabase) => {
     title: image.title ?? '',
     saved: image.saved ?? false,
   };
-  const { error } = await client
+
+  console.log('[persistImageHistory] 送信データ:', {
+    id: payload.id,
+    user_id: payload.user_id,
+    promptLength: payload.prompt?.length || 0,
+    thumbnailLength: payload.thumbnail_url?.length || 0,
+    created_at: payload.created_at,
+    revision: payload.revision,
+  });
+
+  const { data, error } = await client
     .from('image_histories')
     .upsert(payload, { onConflict: 'id' });
+
   if (error) {
+    console.error('[persistImageHistory] Supabaseエラー:', {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+    });
     throw error;
   }
+
+  console.log('[persistImageHistory] 保存成功:', {
+    imageId: payload.id,
+    responseData: data,
+  });
+
   return payload;
 };
 
