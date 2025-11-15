@@ -4,18 +4,24 @@ import { useNavigate } from 'react-router-dom';
 import './Auth.css';
 
 const Login = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [registerUsername, setRegisterUsername] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerConfirmPassword, setRegisterConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [infoMessage, setInfoMessage] = useState('');
   const [showRegister, setShowRegister] = useState(false);
   const { login, register } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
-    
-    const result = login(username, password);
+    setInfoMessage('');
+
+    const result = await login(loginEmail, loginPassword);
     if (result.success) {
       navigate('/image-generator');
     } else {
@@ -23,17 +29,23 @@ const Login = () => {
     }
   };
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     setError('');
-    
-    const formData = new FormData(e.target);
-    const email = formData.get('email');
-    const confirmPassword = formData.get('confirmPassword');
-    
-    const result = register(username, email, password, confirmPassword);
+    setInfoMessage('');
+
+    const result = await register(
+      registerUsername,
+      registerEmail,
+      registerPassword,
+      registerConfirmPassword
+    );
     if (result.success) {
-      navigate('/image-generator');
+      if (result.requiresConfirmation) {
+        setInfoMessage('確認メールを送信しました。メール内のリンクからアカウントを有効化してください。');
+      } else {
+        navigate('/image-generator');
+      }
     } else {
       setError(result.error);
     }
@@ -49,12 +61,12 @@ const Login = () => {
             <h2>ログイン</h2>
             <form onSubmit={handleLogin} className="auth-form">
               <div className="form-group">
-                <label htmlFor="username">ユーザー名</label>
+                <label htmlFor="email">メールアドレス</label>
                 <input
-                  id="username"
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  id="email"
+                  type="email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
                   required
                   autoFocus
                 />
@@ -64,12 +76,13 @@ const Login = () => {
                 <input
                   id="password"
                   type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
                   required
                 />
               </div>
               {error && <div className="error-message">{error}</div>}
+              {infoMessage && <div className="info-message">{infoMessage}</div>}
               <button type="submit" className="auth-button">
                 ログイン
               </button>
@@ -93,20 +106,20 @@ const Login = () => {
                 <label htmlFor="reg-username">ユーザー名</label>
                 <input
                   id="reg-username"
-                  name="username"
                   type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  value={registerUsername}
+                  onChange={(e) => setRegisterUsername(e.target.value)}
                   required
                   autoFocus
                 />
               </div>
               <div className="form-group">
-                <label htmlFor="email">メールアドレス</label>
+                <label htmlFor="reg-email">メールアドレス</label>
                 <input
-                  id="email"
-                  name="email"
+                  id="reg-email"
                   type="email"
+                  value={registerEmail}
+                  onChange={(e) => setRegisterEmail(e.target.value)}
                   required
                 />
               </div>
@@ -114,10 +127,9 @@ const Login = () => {
                 <label htmlFor="reg-password">パスワード</label>
                 <input
                   id="reg-password"
-                  name="password"
                   type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={registerPassword}
+                  onChange={(e) => setRegisterPassword(e.target.value)}
                   required
                   minLength={6}
                 />
@@ -127,12 +139,14 @@ const Login = () => {
                 <label htmlFor="confirmPassword">パスワード（確認）</label>
                 <input
                   id="confirmPassword"
-                  name="confirmPassword"
                   type="password"
+                  value={registerConfirmPassword}
+                  onChange={(e) => setRegisterConfirmPassword(e.target.value)}
                   required
                 />
               </div>
               {error && <div className="error-message">{error}</div>}
+              {infoMessage && <div className="info-message">{infoMessage}</div>}
               <button type="submit" className="auth-button">
                 会員登録
               </button>
