@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import supabase from '../lib/supabaseClient.js';
+import supabase from '../lib/supabaseClient';
 import './Auth.css';
 
 const getParam = (primary, fallback) => {

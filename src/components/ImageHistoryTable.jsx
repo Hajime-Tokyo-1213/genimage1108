@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { getImageArchive } from '../lib/authService.js';
-import { supabase } from '../lib/supabaseClient.js';
+import { getImageArchive } from '../lib/authService';
+import { supabase } from '../lib/supabaseClient';
+import { handleError } from '../utils/errorHandler.ts';
 import './ImageHistoryTable.css';
 
 const ImageHistoryTable = () => {
@@ -33,13 +34,15 @@ const ImageHistoryTable = () => {
       setArchiveData(prev => page === 0 ? data : [...prev, ...data]);
       setHasMore(data.length === ITEMS_PER_PAGE);
     } catch (err) {
-      console.error('アーカイブデータの読み込みエラー:', err);
-      // 404エラーの場合、テーブルが存在しない可能性がある
-      if (err.code === 'PGRST116' || err.message?.includes('404') || err.message?.includes('relation') || err.message?.includes('does not exist')) {
-        setError('画像履歴アーカイブテーブルが存在しません。Supabaseでマイグレーションファイル（migration_create_image_history_archive.sql）を実行してください。');
-      } else {
-        setError('データの読み込みに失敗しました: ' + (err.message || '不明なエラー'));
-      }
+      const context = {
+        component: 'ImageHistoryTable',
+        action: 'loadArchiveData',
+        userId: user?.id,
+        page,
+        offset: page * ITEMS_PER_PAGE
+      };
+      const errorMessage = handleError(err, context);
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

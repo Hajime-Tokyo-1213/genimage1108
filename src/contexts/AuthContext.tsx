@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
-import supabase from '../lib/supabaseClient.js';
-import { loginUser, registerUser, logoutUser } from '../lib/authService.js';
+import supabase from '../lib/supabaseClient';
+import { loginUser, registerUser, logoutUser } from '../lib/authService';
 
 type AuthResult = { success: boolean; error?: string; requiresConfirmation?: boolean };
 

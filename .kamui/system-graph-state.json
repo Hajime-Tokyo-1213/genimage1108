@@ -1,0 +1,1733 @@
+{
+  "schemaVersion": 1,
+  "projectPath": "/Users/murakamihajime/Desktop/251107",
+  "projectRootName": "251107",
+  "graphRenderingMode": "refactor",
+  "linkDisplayMode": "all",
+  "graphStats": {
+    "totalNodes": 30,
+    "folders": 6,
+    "files": 24,
+    "images": 0,
+    "videos": 0,
+    "audio": 0,
+    "code": 8,
+    "text": 5,
+    "html": 1,
+    "yaml": 2,
+    "json": 2,
+    "other": 6,
+    "totalLines": 7503,
+    "maxLines": 2643
+  },
+  "directoryTree": {
+    "name": "251107",
+    "type": "directory",
+    "children": [
+      {
+        "name": ".DS_Store",
+        "type": "file",
+        "lines": 0
+      },
+      {
+        "name": ".github",
+        "type": "directory",
+        "children": [
+          {
+            "name": "workflows",
+            "type": "directory",
+            "children": [
+              {
+                "name": "claude-code-review.yml",
+                "type": "file",
+                "lines": 78
+              },
+              {
+                "name": "claude.yml",
+                "type": "file",
+                "lines": 64
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": ".gitignore",
+        "type": "file",
+        "lines": 0
+      },
+      {
+        "name": "IMAGE_GENERATOR_README.md",
+        "type": "file",
+        "lines": 70
+      },
+      {
+        "name": "README.md",
+        "type": "file",
+        "lines": 98
+      },
+      {
+        "name": "index.html",
+        "type": "file",
+        "lines": 14
+      },
+      {
+        "name": "package-lock.json",
+        "type": "file",
+        "lines": 1688
+      },
+      {
+        "name": "package.json",
+        "type": "file",
+        "lines": 25
+      },
+      {
+        "name": "src",
+        "type": "directory",
+        "children": [
+          {
+            "name": ".DS_Store",
+            "type": "file",
+            "lines": 0
+          },
+          {
+            "name": "App.jsx",
+            "type": "file",
+            "lines": 32
+          },
+          {
+            "name": "ErrorBoundary.jsx",
+            "type": "file",
+            "lines": 75
+          },
+          {
+            "name": "ImageGenerator.css",
+            "type": "file",
+            "lines": 1265
+          },
+          {
+            "name": "ImageGenerator.jsx",
+            "type": "file",
+            "lines": 2643
+          },
+          {
+            "name": "components",
+            "type": "directory",
+            "children": [
+              {
+                "name": "Auth.css",
+                "type": "file",
+                "lines": 124
+              },
+              {
+                "name": "Login.jsx",
+                "type": "file",
+                "lines": 158
+              },
+              {
+                "name": "ProtectedRoute.jsx",
+                "type": "file",
+                "lines": 31
+              }
+            ]
+          },
+          {
+            "name": "contexts",
+            "type": "directory",
+            "children": [
+              {
+                "name": "AuthContext.jsx",
+                "type": "file",
+                "lines": 104
+              }
+            ]
+          },
+          {
+            "name": "index.css",
+            "type": "file",
+            "lines": 18
+          },
+          {
+            "name": "main.jsx",
+            "type": "file",
+            "lines": 11
+          }
+        ]
+      },
+      {
+        "name": "vite.config.js",
+        "type": "file",
+        "lines": 11
+      },
+      {
+        "name": "改修仕様書.md",
+        "type": "file",
+        "lines": 202
+      },
+      {
+        "name": "改修仕様書_v8.md",
+        "type": "file",
+        "lines": 706
+      },
+      {
+        "name": "追加改修仕様書.md",
+        "type": "file",
+        "lines": 86
+      }
+    ]
+  },
+  "graphData": {
+    "nodes": [
+      {
+        "id": "251107",
+        "name": "251107",
+        "path": "251107",
+        "type": "directory",
+        "lines": 0,
+        "val": 14,
+        "color": "#ff3b30",
+        "baseColor": "#4ec9b0",
+        "originalColor": "#4ec9b0",
+        "defaultGlow": 0.18,
+        "glowIntensity": 1.9,
+        "highlighted": false,
+        "parentPath": null,
+        "childFileCount": 11,
+        "x": -16.104778862246654,
+        "y": -2.2929987611930454,
+        "z": 45.68691327517669,
+        "vx": 1.9664097556036167e-9,
+        "vy": 2.4486918641730335e-10,
+        "vz": -7.98557178139716e-10
+      },
+      {
+        "id": "251107/.DS_Store",
+        "name": ".DS_Store",
+        "path": "251107/.DS_Store",
+        "type": "file",
+        "lines": 0,
+        "val": 6,
+        "color": "#4d515a",
+        "baseColor": "#57606f",
+        "originalColor": "#57606f",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 0,
+        "x": -53.888295735776204,
+        "y": -21.545553159777178,
+        "z": 39.658428823194086,
+        "vx": 2.4521109327562853e-9,
+        "vy": -6.452006437947192e-10,
+        "vz": 2.537976412004268e-10
+      },
+      {
+        "id": "251107/.github",
+        "name": ".github",
+        "path": "251107/.github",
+        "type": "directory",
+        "lines": 0,
+        "val": 14,
+        "color": "#4d515a",
+        "baseColor": "#4ec9b0",
+        "originalColor": "#4ec9b0",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 0,
+        "x": -14.716189239594515,
+        "y": 20.281905402452615,
+        "z": 110.75677800772202,
+        "vx": 9.9493334726035e-10,
+        "vy": 3.629520016868394e-10,
+        "vz": 5.831324861821429e-10
+      },
+      {
+        "id": "251107/.github/workflows",
+        "name": "workflows",
+        "path": "251107/.github/workflows",
+        "type": "directory",
+        "lines": 0,
+        "val": 14,
+        "color": "#4d515a",
+        "baseColor": "#4ec9b0",
+        "originalColor": "#4ec9b0",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/.github",
+        "childFileCount": 2,
+        "x": -14.746584826673807,
+        "y": 39.708015384621255,
+        "z": 167.0764013879416,
+        "vx": 8.214609581151776e-11,
+        "vy": 2.5200547782339806e-10,
+        "vz": 1.3355993657250176e-9
+      },
+      {
+        "id": "251107/.github/workflows/claude-code-review.yml",
+        "name": "claude-code-review.yml",
+        "path": "251107/.github/workflows/claude-code-review.yml",
+        "type": "file",
+        "lines": 78,
+        "val": 6.975,
+        "color": "#4d515a",
+        "baseColor": "#f1c40f",
+        "originalColor": "#f1c40f",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/.github/workflows",
+        "childFileCount": 0,
+        "x": -0.4581141444112992,
+        "y": 67.67639603392792,
+        "z": 186.6864345517208,
+        "vx": -2.520584846103062e-10,
+        "vy": 8.567247119441391e-11,
+        "vz": 2.075302430809891e-9
+      },
+      {
+        "id": "251107/.github/workflows/claude.yml",
+        "name": "claude.yml",
+        "path": "251107/.github/workflows/claude.yml",
+        "type": "file",
+        "lines": 64,
+        "val": 6.8,
+        "color": "#4d515a",
+        "baseColor": "#f1c40f",
+        "originalColor": "#f1c40f",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/.github/workflows",
+        "childFileCount": 0,
+        "x": -23.680877740518714,
+        "y": 41.8998629307133,
+        "z": 203.39501387313024,
+        "vx": -4.2112114056653114e-10,
+        "vy": -4.0168859393420413e-10,
+        "vz": 1.4092794556401142e-9
+      },
+      {
+        "id": "251107/.gitignore",
+        "name": ".gitignore",
+        "path": "251107/.gitignore",
+        "type": "file",
+        "lines": 0,
+        "val": 6,
+        "color": "#4d515a",
+        "baseColor": "#57606f",
+        "originalColor": "#57606f",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 0,
+        "x": -24.155663247899607,
+        "y": -40.079507589695574,
+        "z": 63.46458434496204,
+        "vx": 2.3884262526992064e-9,
+        "vy": 5.51380975265967e-10,
+        "vz": 2.5240509671430936e-10
+      },
+      {
+        "id": "251107/IMAGE_GENERATOR_README.md",
+        "name": "IMAGE_GENERATOR_README.md",
+        "path": "251107/IMAGE_GENERATOR_README.md",
+        "type": "file",
+        "lines": 70,
+        "val": 6.875,
+        "color": "#4d515a",
+        "baseColor": "#3498db",
+        "originalColor": "#3498db",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 0,
+        "x": -43.925487491637405,
+        "y": -9.91913499193238,
+        "z": 18.198267117885838,
+        "vx": 1.9319039315060468e-9,
+        "vy": 2.384843946567972e-10,
+        "vz": -2.408661111307496e-10
+      },
+      {
+        "id": "251107/README.md",
+        "name": "README.md",
+        "path": "251107/README.md",
+        "type": "file",
+        "lines": 98,
+        "val": 7.225,
+        "color": "#4d515a",
+        "baseColor": "#3498db",
+        "originalColor": "#3498db",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 0,
+        "x": 0.4349028892460658,
+        "y": 32.50043438168489,
+        "z": 51.77172576865311,
+        "vx": 2.9660306538160957e-9,
+        "vy": -9.533165255948485e-11,
+        "vz": -4.823031504060342e-10
+      },
+      {
+        "id": "251107/index.html",
+        "name": "index.html",
+        "path": "251107/index.html",
+        "type": "file",
+        "lines": 14,
+        "val": 6.175,
+        "color": "#4d515a",
+        "baseColor": "#e44d26",
+        "originalColor": "#e44d26",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 0,
+        "x": -38.59094060226175,
+        "y": 18.74937588563695,
+        "z": 72.57994810013369,
+        "vx": 2.569946786680809e-9,
+        "vy": 7.619367668897845e-10,
+        "vz": -3.790878402341822e-10
+      },
+      {
+        "id": "251107/package-lock.json",
+        "name": "package-lock.json",
+        "path": "251107/package-lock.json",
+        "type": "file",
+        "lines": 1688,
+        "val": 22,
+        "color": "#4d515a",
+        "baseColor": "#8e44ad",
+        "originalColor": "#8e44ad",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 0,
+        "x": -56.318145924283634,
+        "y": 11.643436168813887,
+        "z": 47.69933911267838,
+        "vx": 2.048002096820643e-9,
+        "vy": 4.360171538075773e-10,
+        "vz": -5.745594633609313e-10
+      },
+      {
+        "id": "251107/package.json",
+        "name": "package.json",
+        "path": "251107/package.json",
+        "type": "file",
+        "lines": 25,
+        "val": 6.3125,
+        "color": "#4d515a",
+        "baseColor": "#8e44ad",
+        "originalColor": "#8e44ad",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 0,
+        "x": -46.92378579577619,
+        "y": -18.179980693232523,
+        "z": 70.9796447426797,
+        "vx": 2.8372470863527894e-9,
+        "vy": -1.1179588060110812e-10,
+        "vz": 4.451236403457205e-11
+      },
+      {
+        "id": "251107/src",
+        "name": "src",
+        "path": "251107/src",
+        "type": "directory",
+        "lines": 0,
+        "val": 14,
+        "color": "#4d515a",
+        "baseColor": "#4ec9b0",
+        "originalColor": "#4ec9b0",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 7,
+        "x": 15.026113969538633,
+        "y": -1.6225516097091888,
+        "z": -62.37421057443064,
+        "vx": -3.543705731170024e-11,
+        "vy": -8.317074965203169e-10,
+        "vz": -5.632204012664595e-10
+      },
+      {
+        "id": "251107/src/.DS_Store",
+        "name": ".DS_Store",
+        "path": "251107/src/.DS_Store",
+        "type": "file",
+        "lines": 0,
+        "val": 6,
+        "color": "#4d515a",
+        "baseColor": "#57606f",
+        "originalColor": "#57606f",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/src",
+        "childFileCount": 0,
+        "x": 19.54327063409033,
+        "y": -39.178901402691054,
+        "z": -65.95794879048773,
+        "vx": -5.618050420723156e-10,
+        "vy": -8.843293338176132e-10,
+        "vz": -9.55095925676922e-10
+      },
+      {
+        "id": "251107/src/App.jsx",
+        "name": "App.jsx",
+        "path": "251107/src/App.jsx",
+        "type": "file",
+        "lines": 32,
+        "val": 6.4,
+        "color": "#4d515a",
+        "baseColor": "#61dafb",
+        "originalColor": "#61dafb",
+        "defaultGlow": 0.1,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/src",
+        "childFileCount": 0,
+        "x": -7.462564485572107,
+        "y": 21.276255663545214,
+        "z": -87.19908319563508,
+        "vx": -3.317216032601759e-10,
+        "vy": -1.3980354538677872e-9,
+        "vz": -9.3472245166068e-10
+      },
+      {
+        "id": "251107/src/ErrorBoundary.jsx",
+        "name": "ErrorBoundary.jsx",
+        "path": "251107/src/ErrorBoundary.jsx",
+        "type": "file",
+        "lines": 75,
+        "val": 6.9375,
+        "color": "#4d515a",
+        "baseColor": "#61dafb",
+        "originalColor": "#61dafb",
+        "defaultGlow": 0.1,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/src",
+        "childFileCount": 0,
+        "x": -15.34362099556045,
+        "y": -7.9059254278137505,
+        "z": -86.97702101024092,
+        "vx": -9.510151394128144e-11,
+        "vy": -1.194521225429395e-9,
+        "vz": -4.333290554321416e-10
+      },
+      {
+        "id": "251107/src/ImageGenerator.css",
+        "name": "ImageGenerator.css",
+        "path": "251107/src/ImageGenerator.css",
+        "type": "file",
+        "lines": 1265,
+        "val": 21.8125,
+        "color": "#ff3b30",
+        "baseColor": "#1572b6",
+        "originalColor": "#1572b6",
+        "defaultGlow": 0.18,
+        "glowIntensity": 1.9,
+        "highlighted": false,
+        "parentPath": "251107/src",
+        "childFileCount": 0,
+        "x": 38.990434735836764,
+        "y": 18.336866102677522,
+        "z": -41.81721107277907,
+        "vx": 6.462940093833493e-10,
+        "vy": -1.0306179291223955e-9,
+        "vz": -1.258875039062211e-9
+      },
+      {
+        "id": "251107/src/ImageGenerator.jsx",
+        "name": "ImageGenerator.jsx",
+        "path": "251107/src/ImageGenerator.jsx",
+        "type": "file",
+        "lines": 2643,
+        "val": 22,
+        "color": "#ff3b30",
+        "baseColor": "#61dafb",
+        "originalColor": "#61dafb",
+        "defaultGlow": 0.1,
+        "glowIntensity": 1.9,
+        "highlighted": false,
+        "parentPath": "251107/src",
+        "childFileCount": 0,
+        "x": 1.9425171989118035,
+        "y": 35.411134148795426,
+        "z": -62.039280474669944,
+        "vx": -3.130419638508781e-10,
+        "vy": -9.647403329802763e-10,
+        "vz": -1.0896341547132859e-9
+      },
+      {
+        "id": "251107/src/components",
+        "name": "components",
+        "path": "251107/src/components",
+        "type": "directory",
+        "lines": 0,
+        "val": 14,
+        "color": "#4d515a",
+        "baseColor": "#4ec9b0",
+        "originalColor": "#4ec9b0",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/src",
+        "childFileCount": 3,
+        "x": 26.38801328182083,
+        "y": -43.42029116378048,
+        "z": -120.57031524863409,
+        "vx": -1.9097164685504313e-10,
+        "vy": -6.198542860552113e-10,
+        "vz": -9.459201493941465e-10
+      },
+      {
+        "id": "251107/src/components/Auth.css",
+        "name": "Auth.css",
+        "path": "251107/src/components/Auth.css",
+        "type": "file",
+        "lines": 124,
+        "val": 7.55,
+        "color": "#4d515a",
+        "baseColor": "#1572b6",
+        "originalColor": "#1572b6",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/src/components",
+        "childFileCount": 0,
+        "x": 10.930431292607496,
+        "y": -55.987624700333654,
+        "z": -154.55081325645523,
+        "vx": -2.408991853156361e-10,
+        "vy": -6.236823940156991e-10,
+        "vz": -1.0966990149955082e-9
+      },
+      {
+        "id": "251107/src/components/Login.jsx",
+        "name": "Login.jsx",
+        "path": "251107/src/components/Login.jsx",
+        "type": "file",
+        "lines": 158,
+        "val": 7.975,
+        "color": "#4d515a",
+        "baseColor": "#61dafb",
+        "originalColor": "#61dafb",
+        "defaultGlow": 0.1,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/src/components",
+        "childFileCount": 0,
+        "x": 50.50502999640279,
+        "y": -48.553082508728146,
+        "z": -151.64439154076788,
+        "vx": -2.103137068326538e-10,
+        "vy": -6.262906439634516e-10,
+        "vz": -1.1002492844586788e-9
+      },
+      {
+        "id": "251107/src/components/ProtectedRoute.jsx",
+        "name": "ProtectedRoute.jsx",
+        "path": "251107/src/components/ProtectedRoute.jsx",
+        "type": "file",
+        "lines": 31,
+        "val": 6.3875,
+        "color": "#4d515a",
+        "baseColor": "#61dafb",
+        "originalColor": "#61dafb",
+        "defaultGlow": 0.1,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/src/components",
+        "childFileCount": 0,
+        "x": 36.20031799306781,
+        "y": -79.81854780474833,
+        "z": -132.01420597513763,
+        "vx": -2.086412329646271e-10,
+        "vy": -6.099500077679021e-10,
+        "vz": -1.227940575502444e-9
+      },
+      {
+        "id": "251107/src/contexts",
+        "name": "contexts",
+        "path": "251107/src/contexts",
+        "type": "directory",
+        "lines": 0,
+        "val": 14,
+        "color": "#4d515a",
+        "baseColor": "#4ec9b0",
+        "originalColor": "#4ec9b0",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/src",
+        "childFileCount": 1,
+        "x": 49.24217398325295,
+        "y": 43.48629667666054,
+        "z": -73.20934068846493,
+        "vx": -4.292849620312636e-10,
+        "vy": -7.37509155859109e-10,
+        "vz": -1.0163759966129983e-9
+      },
+      {
+        "id": "251107/src/contexts/AuthContext.jsx",
+        "name": "AuthContext.jsx",
+        "path": "251107/src/contexts/AuthContext.jsx",
+        "type": "file",
+        "lines": 104,
+        "val": 7.3,
+        "color": "#4d515a",
+        "baseColor": "#61dafb",
+        "originalColor": "#61dafb",
+        "defaultGlow": 0.1,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/src/contexts",
+        "childFileCount": 0,
+        "x": 74.02319152839814,
+        "y": 75.3622315737347,
+        "z": -78.93500560402634,
+        "vx": -5.530766112030579e-10,
+        "vy": -4.93310216651664e-10,
+        "vz": -1.4865098409447304e-9
+      },
+      {
+        "id": "251107/src/index.css",
+        "name": "index.css",
+        "path": "251107/src/index.css",
+        "type": "file",
+        "lines": 18,
+        "val": 6.225,
+        "color": "#4d515a",
+        "baseColor": "#1572b6",
+        "originalColor": "#1572b6",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/src",
+        "childFileCount": 0,
+        "x": 52.566911068532534,
+        "y": -12.667867943688588,
+        "z": -65.70185956332828,
+        "vx": -2.1138835039025947e-10,
+        "vy": -1.1996251823682021e-9,
+        "vz": -1.2288361962176539e-9
+      },
+      {
+        "id": "251107/src/main.jsx",
+        "name": "main.jsx",
+        "path": "251107/src/main.jsx",
+        "type": "file",
+        "lines": 11,
+        "val": 6.1375,
+        "color": "#4d515a",
+        "baseColor": "#61dafb",
+        "originalColor": "#61dafb",
+        "defaultGlow": 0.1,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107/src",
+        "childFileCount": 0,
+        "x": 25.497236768923184,
+        "y": 8.811874479760897,
+        "z": -98.09198294019023,
+        "vx": -5.417996200763652e-10,
+        "vy": -9.363929097472558e-10,
+        "vz": -7.794861702581097e-10
+      },
+      {
+        "id": "251107/vite.config.js",
+        "name": "vite.config.js",
+        "path": "251107/vite.config.js",
+        "type": "file",
+        "lines": 11,
+        "val": 6.1375,
+        "color": "#4d515a",
+        "baseColor": "#f7df1e",
+        "originalColor": "#f7df1e",
+        "defaultGlow": 0.1,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 0,
+        "x": 15.229954708811986,
+        "y": -25.230425654828316,
+        "z": 52.74517152672943,
+        "vx": 2.577818100117757e-9,
+        "vy": 1.0206322998669343e-9,
+        "vz": -8.069413475607166e-10
+      },
+      {
+        "id": "251107/改修仕様書.md",
+        "name": "改修仕様書.md",
+        "path": "251107/改修仕様書.md",
+        "type": "file",
+        "lines": 202,
+        "val": 8.525,
+        "color": "#4d515a",
+        "baseColor": "#3498db",
+        "originalColor": "#3498db",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 0,
+        "x": -6.249976780156557,
+        "y": -17.024806191254314,
+        "z": 81.60950362164283,
+        "vx": 2.438373951019689e-9,
+        "vy": 1.29300325639347e-10,
+        "vz": -7.396559228554055e-10
+      },
+      {
+        "id": "251107/改修仕様書_v8.md",
+        "name": "改修仕様書_v8.md",
+        "path": "251107/改修仕様書_v8.md",
+        "type": "file",
+        "lines": 706,
+        "val": 14.825,
+        "color": "#4d515a",
+        "baseColor": "#3498db",
+        "originalColor": "#3498db",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 0,
+        "x": -34.79511299496761,
+        "y": 30.765976884627943,
+        "z": 31.73173711247963,
+        "vx": 2.8530018598112775e-9,
+        "vy": 7.257590972699196e-10,
+        "vz": -5.103932040660144e-10
+      },
+      {
+        "id": "251107/追加改修仕様書.md",
+        "name": "追加改修仕様書.md",
+        "path": "251107/追加改修仕様書.md",
+        "type": "file",
+        "lines": 86,
+        "val": 7.075,
+        "color": "#4d515a",
+        "baseColor": "#3498db",
+        "originalColor": "#3498db",
+        "defaultGlow": 0.18,
+        "glowIntensity": 0.22,
+        "highlighted": false,
+        "parentPath": "251107",
+        "childFileCount": 0,
+        "x": -19.160361155656087,
+        "y": -42.48286212264873,
+        "z": 37.04277855527003,
+        "vx": 2.2927299470985132e-9,
+        "vy": 1.933698819774139e-10,
+        "vz": -5.528216468386555e-10
+      }
+    ],
+    "links": [
+      {
+        "source": "251107",
+        "target": "251107/.DS_Store",
+        "type": "tree"
+      },
+      {
+        "source": "251107",
+        "target": "251107/.github",
+        "type": "tree"
+      },
+      {
+        "source": "251107/.github",
+        "target": "251107/.github/workflows",
+        "type": "tree"
+      },
+      {
+        "source": "251107/.github/workflows",
+        "target": "251107/.github/workflows/claude-code-review.yml",
+        "type": "tree"
+      },
+      {
+        "source": "251107/.github/workflows",
+        "target": "251107/.github/workflows/claude.yml",
+        "type": "tree"
+      },
+      {
+        "source": "251107",
+        "target": "251107/.gitignore",
+        "type": "tree"
+      },
+      {
+        "source": "251107",
+        "target": "251107/IMAGE_GENERATOR_README.md",
+        "type": "tree"
+      },
+      {
+        "source": "251107",
+        "target": "251107/README.md",
+        "type": "tree"
+      },
+      {
+        "source": "251107",
+        "target": "251107/index.html",
+        "type": "tree"
+      },
+      {
+        "source": "251107",
+        "target": "251107/package-lock.json",
+        "type": "tree"
+      },
+      {
+        "source": "251107",
+        "target": "251107/package.json",
+        "type": "tree"
+      },
+      {
+        "source": "251107",
+        "target": "251107/src",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src",
+        "target": "251107/src/.DS_Store",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src",
+        "target": "251107/src/App.jsx",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src",
+        "target": "251107/src/ErrorBoundary.jsx",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src",
+        "target": "251107/src/ImageGenerator.css",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src",
+        "target": "251107/src/ImageGenerator.jsx",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src",
+        "target": "251107/src/components",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src/components",
+        "target": "251107/src/components/Auth.css",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src/components",
+        "target": "251107/src/components/Login.jsx",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src/components",
+        "target": "251107/src/components/ProtectedRoute.jsx",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src",
+        "target": "251107/src/contexts",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src/contexts",
+        "target": "251107/src/contexts/AuthContext.jsx",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src",
+        "target": "251107/src/index.css",
+        "type": "tree"
+      },
+      {
+        "source": "251107/src",
+        "target": "251107/src/main.jsx",
+        "type": "tree"
+      },
+      {
+        "source": "251107",
+        "target": "251107/vite.config.js",
+        "type": "tree"
+      },
+      {
+        "source": "251107",
+        "target": "251107/改修仕様書.md",
+        "type": "tree"
+      },
+      {
+        "source": "251107",
+        "target": "251107/改修仕様書_v8.md",
+        "type": "tree"
+      },
+      {
+        "source": "251107",
+        "target": "251107/追加改修仕様書.md",
+        "type": "tree"
+      }
+    ]
+  },
+  "trackedFiles": [
+    ".DS_Store",
+    ".gitignore",
+    "IMAGE_GENERATOR_README.md",
+    "README.md",
+    "index.html",
+    "package-lock.json",
+    "package.json",
+    "src/.DS_Store",
+    "src/App.jsx",
+    "src/ErrorBoundary.jsx",
+    "src/ImageGenerator.css",
+    "src/ImageGenerator.jsx",
+    "src/components/Auth.css",
+    "src/components/Login.jsx",
+    "src/components/ProtectedRoute.jsx",
+    "src/contexts/AuthContext.jsx",
+    "src/index.css",
+    "src/main.jsx",
+    "vite.config.js",
+    "改修仕様書.md",
+    "改修仕様書_v8.md",
+    "追加改修仕様書.md"
+  ],
+  "uiState": {
+    "expandedDirs": [
+      "251107",
+      "251107/251107",
+      "251107/.github",
+      "251107/251107/.github",
+      "251107/.github/workflows",
+      "251107/251107/.github/workflows"
+    ],
+    "selectedPath": null
+  },
+  "directoryTreeMeta": {
+    "mode": "full",
+    "maxDepthApplied": 10,
+    "maxEntriesPerDirectory": 0,
+    "isPartial": false
+  },
+  "gitHistoryMeta": {
+    "mode": "full",
+    "isPartial": false,
+    "branchPulse": {
+      "generatedAt": 1763030413536,
+      "targets": [
+        "main",
+        "task/task-1762998525837-4e94d0",
+        "task/task-1763004740390-2cd272",
+        "task/task-1763004775303-a3f246",
+        "master",
+        "Hajime-Tokyo-1213/add-claude-github-actions-1762788913612"
+      ],
+      "statsByBranch": {
+        "task/task-1762998525837-4e94d0": {
+          "branch": "task/task-1762998525837-4e94d0",
+          "head": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "baseRef": "main",
+          "baseHead": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "mergeBase": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "divergence": {
+            "aheadCount": 0,
+            "fileCount": 0
+          },
+          "baseline": {
+            "aheadCount": 0,
+            "behindCount": 0,
+            "fileCount": 0
+          },
+          "upstream": null
+        },
+        "task/task-1763004740390-2cd272": {
+          "branch": "task/task-1763004740390-2cd272",
+          "head": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "baseRef": "main",
+          "baseHead": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "mergeBase": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "divergence": {
+            "aheadCount": 0,
+            "fileCount": 0
+          },
+          "baseline": {
+            "aheadCount": 0,
+            "behindCount": 0,
+            "fileCount": 0
+          },
+          "upstream": null
+        },
+        "task/task-1763004775303-a3f246": {
+          "branch": "task/task-1763004775303-a3f246",
+          "head": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "baseRef": "main",
+          "baseHead": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "mergeBase": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "divergence": {
+            "aheadCount": 0,
+            "fileCount": 0
+          },
+          "baseline": {
+            "aheadCount": 0,
+            "behindCount": 0,
+            "fileCount": 0
+          },
+          "upstream": null
+        },
+        "main": {
+          "branch": "main",
+          "head": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "baseRef": "origin/main",
+          "baseHead": "f6c9c980e63a02d6e660f5731dc41aa4aedcc99b",
+          "mergeBase": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "divergence": {
+            "aheadCount": 0,
+            "fileCount": 0
+          },
+          "baseline": {
+            "aheadCount": 0,
+            "behindCount": 3,
+            "fileCount": 2
+          },
+          "upstream": null
+        }
+      }
+    }
+  },
+  "gitHistoryState": {
+    "selectedTimelineIndex": 1,
+    "activeCommitHash": "f6c9c980e63a02d6e660f5731dc41aa4aedcc99b",
+    "entries": [
+      {
+        "type": "live",
+        "label": "現在のコードベース",
+        "files": [],
+        "branch": "main",
+        "targetCommitHash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+        "worktreePath": "/Users/murakamihajime/Desktop/251107",
+        "timestamp": 1763030417946,
+        "lane": 0,
+        "branchLabel": "main",
+        "branchTags": [
+          "main"
+        ],
+        "isDefaultWorktree": true,
+        "branchColor": "#4f85e8",
+        "index": 0
+      },
+      {
+        "type": "commit",
+        "label": "Merge pull request #1 from Hajime-Tokyo-1213/add-claude-gith…",
+        "commit": {
+          "hash": "f6c9c980e63a02d6e660f5731dc41aa4aedcc99b",
+          "subject": "Merge pull request #1 from Hajime-Tokyo-1213/add-claude-github-actions-1762788913612",
+          "author": "Hajime-Tokyo-1213",
+          "timestamp": 1762789141,
+          "parents": [
+            "cac3b9e6b64d378a85636697965fad50ec3a9473",
+            "b69b05bea874c7fdb2b7e5480f97017542b523a9"
+          ],
+          "parent": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "refs": "origin/main",
+          "branches": [
+            "origin/main",
+            "Hajime-Tokyo-1213/add-claude-github-actions-1762788913612"
+          ]
+        },
+        "commitHash": "f6c9c980e63a02d6e660f5731dc41aa4aedcc99b",
+        "lane": 0,
+        "parentLinks": [
+          {
+            "hash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+            "lane": 0
+          },
+          {
+            "hash": "b69b05bea874c7fdb2b7e5480f97017542b523a9",
+            "lane": 1
+          }
+        ],
+        "primaryBranchName": "main",
+        "branchColor": "#4f85e8",
+        "branchTags": [
+          "main",
+          "Hajime-Tokyo-1213/add-claude-github-actions-1762788913612"
+        ],
+        "index": 1
+      },
+      {
+        "type": "commit",
+        "label": "Claude Code Review workflow",
+        "commit": {
+          "hash": "b69b05bea874c7fdb2b7e5480f97017542b523a9",
+          "subject": "Claude Code Review workflow",
+          "author": "Hajime-Tokyo-1213",
+          "timestamp": 1762788916,
+          "parents": [
+            "ffc8cd8247e53c986b7f270b81ca538356c13e83"
+          ],
+          "parent": "ffc8cd8247e53c986b7f270b81ca538356c13e83",
+          "refs": "origin/add-claude-github-actions-1762788913612",
+          "branches": [
+            "origin/add-claude-github-actions-1762788913612",
+            "Hajime-Tokyo-1213/add-claude-github-actions-1762788913612"
+          ]
+        },
+        "commitHash": "b69b05bea874c7fdb2b7e5480f97017542b523a9",
+        "lane": 1,
+        "parentLinks": [
+          {
+            "hash": "ffc8cd8247e53c986b7f270b81ca538356c13e83",
+            "lane": 1
+          }
+        ],
+        "primaryBranchName": "add-claude-github-actions-1762788913612",
+        "branchColor": "#e84f7f",
+        "branchTags": [
+          "add-claude-github-actions-1762788913612"
+        ],
+        "index": 2
+      },
+      {
+        "type": "commit",
+        "label": "Claude PR Assistant workflow",
+        "commit": {
+          "hash": "ffc8cd8247e53c986b7f270b81ca538356c13e83",
+          "subject": "Claude PR Assistant workflow",
+          "author": "Hajime-Tokyo-1213",
+          "timestamp": 1762788914,
+          "parents": [
+            "cac3b9e6b64d378a85636697965fad50ec3a9473"
+          ],
+          "parent": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "refs": "",
+          "branches": [
+            "Hajime-Tokyo-1213/add-claude-github-actions-1762788913612"
+          ]
+        },
+        "commitHash": "ffc8cd8247e53c986b7f270b81ca538356c13e83",
+        "lane": 2,
+        "parentLinks": [
+          {
+            "hash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+            "lane": 0
+          }
+        ],
+        "primaryBranchName": "Hajime-Tokyo-1213/add-claude-github-actions-1762788913612",
+        "branchColor": "#e8a84f",
+        "branchTags": [],
+        "index": 3
+      },
+      {
+        "type": "unstaged",
+        "label": "未ステージ (6)",
+        "files": [
+          "src/.DS_Store",
+          "src/ErrorBoundary.jsx",
+          ".kamui/model-versions-cache.json",
+          ".kamui/prompt/merge-prompt.txt",
+          ".kamui/system-graph-state.json",
+          ".kamui/tasks-state.json"
+        ],
+        "branch": "main",
+        "targetCommitHash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+        "worktreePath": "/Users/murakamihajime/Desktop/251107",
+        "timestamp": 1763030417946,
+        "sortOrder": 0,
+        "lane": 0,
+        "branchColor": "#4f85e8",
+        "index": 4
+      },
+      {
+        "type": "staged",
+        "label": "ステージ済み (1)",
+        "files": [
+          "DS_Store"
+        ],
+        "branch": "main",
+        "targetCommitHash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+        "worktreePath": "/Users/murakamihajime/Desktop/251107",
+        "timestamp": 1763030417946,
+        "sortOrder": 1,
+        "lane": 0,
+        "branchColor": "#4f85e8",
+        "index": 5
+      },
+      {
+        "type": "unstaged",
+        "label": "未ステージ [task/task-1762998525837-4e94d0] (1)",
+        "files": [
+          "src/.DS_Store"
+        ],
+        "branch": "task/task-1762998525837-4e94d0",
+        "targetCommitHash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+        "worktreePath": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1762998525837-4e94d0",
+        "timestamp": 1763030413042,
+        "sortOrder": 0,
+        "lane": 3,
+        "branchColor": "#4fe8b8",
+        "index": 6
+      },
+      {
+        "type": "staged",
+        "label": "ステージ済み [task/task-1762998525837-4e94d0] (1)",
+        "files": [
+          "DS_Store"
+        ],
+        "branch": "task/task-1762998525837-4e94d0",
+        "targetCommitHash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+        "worktreePath": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1762998525837-4e94d0",
+        "timestamp": 1763030413042,
+        "sortOrder": 1,
+        "lane": 3,
+        "branchColor": "#4fe8b8",
+        "index": 7
+      },
+      {
+        "type": "anchor",
+        "label": "[実行中] CodexCLI1: AIコンペ: HTMLとCSSで小説閲覧用…",
+        "branch": "task/task-1762998525837-4e94d0",
+        "worktreePath": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1762998525837-4e94d0",
+        "parentCommitHash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+        "lane": 3,
+        "isMerged": false,
+        "mergeCommitHash": null,
+        "statusChildren": [
+          {
+            "type": "unstaged",
+            "label": "未ステージ [task/task-1762998525837-4e94d0] (1)",
+            "files": [
+              "src/.DS_Store"
+            ],
+            "branch": "task/task-1762998525837-4e94d0",
+            "targetCommitHash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+            "worktreePath": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1762998525837-4e94d0",
+            "timestamp": 1763030413042,
+            "sortOrder": 0,
+            "lane": 3,
+            "branchColor": "#4fe8b8",
+            "index": 6
+          },
+          {
+            "type": "staged",
+            "label": "ステージ済み [task/task-1762998525837-4e94d0] (1)",
+            "files": [
+              "DS_Store"
+            ],
+            "branch": "task/task-1762998525837-4e94d0",
+            "targetCommitHash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+            "worktreePath": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1762998525837-4e94d0",
+            "timestamp": 1763030413042,
+            "sortOrder": 1,
+            "lane": 3,
+            "branchColor": "#4fe8b8",
+            "index": 7
+          }
+        ],
+        "isDefaultWorktree": false,
+        "renderMode": "node",
+        "shouldHide": false,
+        "tagLabel": "task/task-1762998525837-4e94d0",
+        "taskId": "task-1762998525837-4e94d0",
+        "taskStatus": "running",
+        "taskStatusLabel": "実行中",
+        "taskName": "CodexCLI1: AIコンペ: HTMLとCSSで小説閲覧用の簡易アプリUIを作成し、複数モデルにカード一覧とモーダル表示案を提案させる",
+        "tooltip": "タスク: CodexCLI1: AIコンペ: HTMLとCSSで小説閲覧用の簡易アプリUIを作成し、複数モデルにカード一覧とモーダル表示案を提案させる\nステータス: 実行中\nID: task-1762998525837-4e94d0\nBranch: task/task-1762998525837-4e94d0\nWorktree: Users/murakamihajime/Desktop/251107/.worktrees/task-1762998525837-4e94d0",
+        "branchColor": "#4fe8b8",
+        "index": 8
+      },
+      {
+        "type": "anchor",
+        "label": "[作業中] ClaudeCode1: AIコンペ: HTMLとCSSで小説閲…",
+        "branch": "task/task-1763004740390-2cd272",
+        "worktreePath": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1763004740390-2cd272",
+        "parentCommitHash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+        "lane": 4,
+        "isMerged": false,
+        "mergeCommitHash": null,
+        "statusChildren": [],
+        "isDefaultWorktree": false,
+        "renderMode": "node",
+        "shouldHide": false,
+        "tagLabel": "task/task-1763004740390-2cd272",
+        "taskId": "task-1763004740390-2cd272",
+        "taskStatus": "working",
+        "taskStatusLabel": "作業中",
+        "taskName": "ClaudeCode1: AIコンペ: HTMLとCSSで小説閲覧用の簡易アプリUIを作成し、複数モデルにカード一覧とモーダル表示案を提案させる。最後にopen novel-viewer.htmlで表示を確認。",
+        "tooltip": "タスク: ClaudeCode1: AIコンペ: HTMLとCSSで小説閲覧用の簡易アプリUIを作成し、複数モデルにカード一覧とモーダル表示案を提案させる。最後にopen novel-viewer.htmlで表示を確認。\nステータス: 作業中\nID: task-1763004740390-2cd272\nBranch: task/task-1763004740390-2cd272\nWorktree: Users/murakamihajime/Desktop/251107/.worktrees/task-1763004740390-2cd272",
+        "branchColor": "#b84fe8",
+        "index": 9
+      },
+      {
+        "type": "anchor",
+        "label": "[実行中] ClaudeCode2: AIコンペ: HTMLとCSSで小説閲…",
+        "branch": "task/task-1763004775303-a3f246",
+        "worktreePath": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1763004775303-a3f246",
+        "parentCommitHash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+        "lane": 5,
+        "isMerged": false,
+        "mergeCommitHash": null,
+        "statusChildren": [],
+        "isDefaultWorktree": false,
+        "renderMode": "node",
+        "shouldHide": false,
+        "tagLabel": "task/task-1763004775303-a3f246",
+        "taskId": "task-1763004775303-a3f246",
+        "taskStatus": "running",
+        "taskStatusLabel": "実行中",
+        "taskName": "ClaudeCode2: AIコンペ: HTMLとCSSで小説閲覧用の簡易アプリUIを作成し、複数モデルにカード一覧とモーダル表示案を提案させる。最後にopen novel-viewer.htmlで表示を確認。",
+        "tooltip": "タスク: ClaudeCode2: AIコンペ: HTMLとCSSで小説閲覧用の簡易アプリUIを作成し、複数モデルにカード一覧とモーダル表示案を提案させる。最後にopen novel-viewer.htmlで表示を確認。\nステータス: 実行中\nID: task-1763004775303-a3f246\nBranch: task/task-1763004775303-a3f246\nWorktree: Users/murakamihajime/Desktop/251107/.worktrees/task-1763004775303-a3f246",
+        "branchColor": "#e8e84f",
+        "index": 10
+      },
+      {
+        "type": "commit",
+        "label": "認証機能を追加: 会員登録とログインが必要な設定に変更",
+        "commit": {
+          "hash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+          "subject": "認証機能を追加: 会員登録とログインが必要な設定に変更",
+          "author": "Hajime-Tokyo-1213",
+          "timestamp": 1762612103,
+          "parents": [
+            "324df079fc14d0b90f74d5f7579c5ff89aaf862e"
+          ],
+          "parent": "324df079fc14d0b90f74d5f7579c5ff89aaf862e",
+          "refs": "HEAD -> main, task/task-1763004775303-a3f246, task/task-1763004740390-2cd272, task/task-1762998529684-3faf06, task/task-1762998525837-4e94d0",
+          "branches": [
+            "HEAD -> main",
+            "task/task-1763004775303-a3f246",
+            "task/task-1763004740390-2cd272",
+            "task/task-1762998529684-3faf06",
+            "task/task-1762998525837-4e94d0",
+            "main"
+          ]
+        },
+        "commitHash": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+        "lane": 0,
+        "parentLinks": [
+          {
+            "hash": "324df079fc14d0b90f74d5f7579c5ff89aaf862e",
+            "lane": 0
+          }
+        ],
+        "primaryBranchName": "main",
+        "branchColor": "#4f85e8",
+        "branchTags": [
+          "main",
+          "task/task-1762998529684-3faf06"
+        ],
+        "worktrees": [
+          {
+            "path": "/Users/murakamihajime/Desktop/251107",
+            "head": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+            "branch": "main",
+            "isMerged": false,
+            "mergeCommitHash": null,
+            "status": {
+              "staged": [
+                {
+                  "path": "DS_Store",
+                  "originalPath": null,
+                  "status": "deleted",
+                  "rawPath": "DS_Store",
+                  "timestamp": 1763030413042
+                }
+              ],
+              "unstaged": [
+                {
+                  "path": "src/.DS_Store",
+                  "originalPath": null,
+                  "status": "deleted",
+                  "rawPath": "src/.DS_Store",
+                  "timestamp": 1763030413042
+                },
+                {
+                  "path": "src/ErrorBoundary.jsx",
+                  "originalPath": null,
+                  "status": "modified",
+                  "rawPath": "src/ErrorBoundary.jsx",
+                  "timestamp": 1763030413042
+                }
+              ],
+              "untracked": [
+                {
+                  "path": ".kamui/model-versions-cache.json",
+                  "status": "untracked",
+                  "rawPath": ".kamui/model-versions-cache.json",
+                  "timestamp": 1763030413042
+                },
+                {
+                  "path": ".kamui/prompt/merge-prompt.txt",
+                  "status": "untracked",
+                  "rawPath": ".kamui/prompt/merge-prompt.txt",
+                  "timestamp": 1763030413042
+                },
+                {
+                  "path": ".kamui/system-graph-state.json",
+                  "status": "untracked",
+                  "rawPath": ".kamui/system-graph-state.json",
+                  "timestamp": 1763030413042
+                },
+                {
+                  "path": ".kamui/tasks-state.json",
+                  "status": "untracked",
+                  "rawPath": ".kamui/tasks-state.json",
+                  "timestamp": 1763030413042
+                },
+                {
+                  "path": ".worktrees/task-1762998525837-4e94d0/",
+                  "status": "untracked",
+                  "rawPath": ".worktrees/task-1762998525837-4e94d0/",
+                  "timestamp": 1763030413042
+                },
+                {
+                  "path": ".worktrees/task-1763004740390-2cd272/",
+                  "status": "untracked",
+                  "rawPath": ".worktrees/task-1763004740390-2cd272/",
+                  "timestamp": 1763030413042
+                },
+                {
+                  "path": ".worktrees/task-1763004775303-a3f246/",
+                  "status": "untracked",
+                  "rawPath": ".worktrees/task-1763004775303-a3f246/",
+                  "timestamp": 1763030413042
+                }
+              ],
+              "capturedAt": 1763030413042
+            },
+            "normalizedPath": "/Users/murakamihajime/Desktop/251107",
+            "lane": 0
+          },
+          {
+            "path": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1762998525837-4e94d0",
+            "head": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+            "branch": "task/task-1762998525837-4e94d0",
+            "isMerged": false,
+            "mergeCommitHash": null,
+            "status": {
+              "staged": [
+                {
+                  "path": "DS_Store",
+                  "originalPath": null,
+                  "status": "deleted",
+                  "rawPath": "DS_Store",
+                  "timestamp": 1763030413042
+                }
+              ],
+              "unstaged": [
+                {
+                  "path": "src/.DS_Store",
+                  "originalPath": null,
+                  "status": "deleted",
+                  "rawPath": "src/.DS_Store",
+                  "timestamp": 1763030413042
+                }
+              ],
+              "untracked": [],
+              "capturedAt": 1763030413042
+            },
+            "normalizedPath": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1762998525837-4e94d0",
+            "lane": 3
+          },
+          {
+            "path": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1763004740390-2cd272",
+            "head": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+            "branch": "task/task-1763004740390-2cd272",
+            "isMerged": false,
+            "mergeCommitHash": null,
+            "status": {
+              "staged": [],
+              "unstaged": [],
+              "untracked": [],
+              "capturedAt": 1763030413063
+            },
+            "normalizedPath": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1763004740390-2cd272",
+            "lane": 4
+          },
+          {
+            "path": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1763004775303-a3f246",
+            "head": "cac3b9e6b64d378a85636697965fad50ec3a9473",
+            "branch": "task/task-1763004775303-a3f246",
+            "isMerged": false,
+            "mergeCommitHash": null,
+            "status": {
+              "staged": [],
+              "unstaged": [],
+              "untracked": [],
+              "capturedAt": 1763030413063
+            },
+            "normalizedPath": "/Users/murakamihajime/Desktop/251107/.worktrees/task-1763004775303-a3f246",
+            "lane": 5
+          }
+        ],
+        "index": 11
+      },
+      {
+        "type": "commit",
+        "label": "Add README with deployment instructions",
+        "commit": {
+          "hash": "324df079fc14d0b90f74d5f7579c5ff89aaf862e",
+          "subject": "Add README with deployment instructions",
+          "author": "Hajime-Tokyo-1213",
+          "timestamp": 1762610565,
+          "parents": [
+            "e258eafbf3fb48639aa0a765a1b49e5f56d859a3"
+          ],
+          "parent": "e258eafbf3fb48639aa0a765a1b49e5f56d859a3",
+          "refs": "",
+          "branches": [
+            "main",
+            "task/task-1762998525837-4e94d0",
+            "task/task-1763004740390-2cd272",
+            "task/task-1763004775303-a3f246"
+          ]
+        },
+        "commitHash": "324df079fc14d0b90f74d5f7579c5ff89aaf862e",
+        "lane": 0,
+        "parentLinks": [
+          {
+            "hash": "e258eafbf3fb48639aa0a765a1b49e5f56d859a3",
+            "lane": 0
+          }
+        ],
+        "primaryBranchName": "main",
+        "branchColor": "#4f85e8",
+        "branchTags": [],
+        "index": 12
+      },
+      {
+        "type": "commit",
+        "label": "Add .gitignore and remove node_modules from tracking",
+        "commit": {
+          "hash": "4da97ce0e17ab6fd18dc07250428956606482810",
+          "subject": "Add .gitignore and remove node_modules from tracking",
+          "author": "Hajime-Tokyo-1213",
+          "timestamp": 1762610474,
+          "parents": [
+            "b75a2c958642baa721418eb8bb02bebc503cf28a"
+          ],
+          "parent": "b75a2c958642baa721418eb8bb02bebc503cf28a",
+          "refs": "",
+          "branches": []
+        },
+        "commitHash": "4da97ce0e17ab6fd18dc07250428956606482810",
+        "lane": 0,
+        "parentLinks": [
+          {
+            "hash": "b75a2c958642baa721418eb8bb02bebc503cf28a",
+            "lane": 2
+          }
+        ],
+        "branchColor": "#4f85e8",
+        "branchTags": [],
+        "index": 13
+      },
+      {
+        "type": "commit",
+        "label": "Add .gitignore and remove node_modules from tracking",
+        "commit": {
+          "hash": "e258eafbf3fb48639aa0a765a1b49e5f56d859a3",
+          "subject": "Add .gitignore and remove node_modules from tracking",
+          "author": "Hajime-Tokyo-1213",
+          "timestamp": 1762610474,
+          "parents": [
+            "4f3a2a95e19dc46ebe21697f160bc11ab9c8929f"
+          ],
+          "parent": "4f3a2a95e19dc46ebe21697f160bc11ab9c8929f",
+          "refs": "",
+          "branches": [
+            "main",
+            "task/task-1762998525837-4e94d0",
+            "task/task-1763004740390-2cd272",
+            "task/task-1763004775303-a3f246"
+          ]
+        },
+        "commitHash": "e258eafbf3fb48639aa0a765a1b49e5f56d859a3",
+        "lane": 0,
+        "parentLinks": [
+          {
+            "hash": "4f3a2a95e19dc46ebe21697f160bc11ab9c8929f",
+            "lane": 0
+          }
+        ],
+        "primaryBranchName": "main",
+        "branchColor": "#4f85e8",
+        "branchTags": [],
+        "index": 14
+      },
+      {
+        "type": "commit",
+        "label": "機能追加: AI選択肢生成、手動選択肢入力、YAML形式入力、ボタン動作修正",
+        "commit": {
+          "hash": "b75a2c958642baa721418eb8bb02bebc503cf28a",
+          "subject": "機能追加: AI選択肢生成、手動選択肢入力、YAML形式入力、ボタン動作修正",
+          "author": "Hajime-Tokyo-1213",
+          "timestamp": 1762606054,
+          "parents": [],
+          "parent": null,
+          "refs": "",
+          "branches": []
+        },
+        "commitHash": "b75a2c958642baa721418eb8bb02bebc503cf28a",
+        "lane": 0,
+        "parentLinks": [],
+        "branchColor": "#4f85e8",
+        "branchTags": [],
+        "index": 15
+      },
+      {
+        "type": "commit",
+        "label": "機能追加: AI選択肢生成、手動選択肢入力、YAML形式入力、ボタン動作修正",
+        "commit": {
+          "hash": "4f3a2a95e19dc46ebe21697f160bc11ab9c8929f",
+          "subject": "機能追加: AI選択肢生成、手動選択肢入力、YAML形式入力、ボタン動作修正",
+          "author": "Hajime-Tokyo-1213",
+          "timestamp": 1762606054,
+          "parents": [],
+          "parent": null,
+          "refs": "",
+          "branches": [
+            "main",
+            "task/task-1762998525837-4e94d0",
+            "task/task-1763004740390-2cd272",
+            "task/task-1763004775303-a3f246"
+          ]
+        },
+        "commitHash": "4f3a2a95e19dc46ebe21697f160bc11ab9c8929f",
+        "lane": 0,
+        "parentLinks": [],
+        "primaryBranchName": "main",
+        "branchColor": "#4f85e8",
+        "branchTags": [],
+        "index": 16
+      },
+      {
+        "type": "empty",
+        "label": "初期状態 (初回コミット以前)",
+        "files": [],
+        "marker": "pre-history",
+        "index": 17
+      }
+    ]
+  },
+  "projectRoot": "/Users/murakamihajime/Desktop/251107",
+  "savedAt": 1763030449284
+}

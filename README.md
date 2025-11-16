@@ -4,11 +4,22 @@ Google Gemini APIとOpenAI APIを使用した画像生成・プロンプト管�
 
 ## 機能
 
-- 🖼️ 画像生成（Imagen 4 / Gemini 2.5 Flash Image）
-- 📝 プロンプトYAMLメーカー
-- 🎨 スタイルライブラリ
-- 🤖 AI選択肢生成機能
-- 📦 画像一括ダウンロード
+- 🖼️ **画像生成**: Imagen 4 / Gemini 2.5 Flash Imageによる高品質画像生成
+- 📝 **プロンプトYAMLメーカー**: 構造化されたプロンプト作成とテンプレート管理
+- 🎨 **スタイルライブラリ**: カスタムスタイルの保存と再利用
+- 🤖 **AI選択肢生成機能**: OpenAI APIによる自動プロンプト候補生成
+- 📦 **画像一括ダウンロード**: 選択した画像をZIPファイルで一括ダウンロード
+- 📋 **画像履歴管理**: 生成した画像の履歴表示、編集、削除
+- 🔐 **ユーザー認証**: Supabaseを使用した安全な認証システム
+- ⚡ **高性能**: React.memo、useCallback、useMemoによる最適化
+
+## 技術スタック
+
+- **フロントエンド**: React 18, TypeScript, Vite
+- **バックエンド**: Supabase (PostgreSQL, Auth, Storage)
+- **AI API**: Google Gemini 2.5 Flash, Google Imagen 4, OpenAI GPT
+- **テスト**: Vitest, React Testing Library
+- **デプロイ**: Vercel
 
 ## セットアップ
 
@@ -30,14 +41,30 @@ VITE_SITE_URL=https://your-production-domain.com
 ### ローカル開発
 
 ```bash
+# 依存関係をインストール
 npm install
+
+# 開発サーバーを起動
 npm run dev
+
+# テストを実行
+npm test
+
+# テストのUIを表示
+npm run test:ui
+
+# カバレッジを表示
+npm run test:coverage
 ```
 
 ### ビルド
 
 ```bash
+# 本番用ビルド
 npm run build
+
+# ビルド結果をプレビュー
+npm run preview
 ```
 
 ## Vercelデプロイ手順
@@ -115,11 +142,45 @@ Vercelダッシュボードで以下の環境変数を設定：
 2. 「Create new secret key」をクリック
 3. 生成されたAPIキーをコピー（一度しか表示されないので注意）
 
+## 開発ガイド
+
+### アーキテクチャ
+
+詳細なアーキテクチャ情報は [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) を参照してください。
+
+### API リファレンス
+
+API の詳細な使用方法は [docs/API.md](./docs/API.md) を参照してください。
+
+### テスト
+
+```bash
+# すべてのテストを実行
+npm test
+
+# 特定のテストファイルを実行
+npm test -- src/utils/__tests__/env.test.ts
+
+# ウォッチモードでテストを実行
+npm test -- --watch
+
+# カバレッジレポートを生成
+npm run test:coverage
+```
+
+### コードスタイル
+
+- TypeScript の使用を推奨
+- React.memo、useCallback、useMemo による最適化
+- カスタムフックによる状態管理の分離
+- エラーハンドリングの統一
+
 ## 注意事項
 
 - APIキーは絶対にGitHubにコミットしないでください
 - `.env`ファイルは`.gitignore`に含まれています
 - Vercelの環境変数は暗号化されて保存されます
+- 本番環境では適切なCORS設定を確認してください
 
 ## ライセンス
 

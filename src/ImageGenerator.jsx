@@ -1,42 +1,32 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuth } from './contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import './ImageGenerator.css';
-import { supabase, requireSession } from './lib/supabaseClient.js';
-import { persistImageHistory, removeImageHistory, persistImageArchive } from './lib/authService.js';
+import { supabase, requireSession } from './lib/supabaseClient';
+import { persistImageHistory, removeImageHistory, persistImageArchive } from './lib/authService';
+import { handleError } from './utils/errorHandler.ts';
+import { useImageGeneration } from './hooks/useImageGeneration';
+import { generateUUID } from './utils/uuid';
+import { useImageHistory } from './hooks/useImageHistory';
+import { useStyleManagement } from './hooks/useStyleManagement';
+import PromptMaker from './components/PromptMaker';
+import HistoryItem from './components/HistoryItem';
 
-const HISTORY_PAGE_SIZE = 10;
 
-// UUID v4を生成する関数（共通）
-const generateUUID = () => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
-
-const createDefaultStyles = () => ([
-  { id: '1', name: '和風アート', prompt: '日本の伝統的な和風アートスタイル、浮世絵風、美しい色彩', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
-  { id: '2', name: '未来都市', prompt: '未来の都市、サイバーパンク、ネオンライト、高層ビル', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
-  { id: '3', name: 'ファンタジー', prompt: 'ファンタジー世界、魔法、幻想的な風景、エピックな構図', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
-  { id: '4', name: '水彩画', prompt: '水彩画スタイル、柔らかい色合い、繊細な筆使い', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
-]);
 
 const ImageGenerator = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [prompt, setPrompt] = useState('');
-  const [images, setImages] = useState([]); // v2: 配列化
+  const [images, setImages] = useState([]); // 表示用の画像配列
   const [currentImageId, setCurrentImageId] = useState(null); // 現在表示中の画像ID
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedImageIds, setSelectedImageIds] = useState(new Set()); // v4: 選択された画像ID
   const [uploadedImage, setUploadedImage] = useState(null); // v3: アップロード画像
   const [showRegenerateForm, setShowRegenerateForm] = useState(false); // v2: 再生成フォーム表示
-  const [styles, setStyles] = useState([]); // v5: プリセットスタイル
   const [showAddStyleForm, setShowAddStyleForm] = useState(false); // v5: スタイル追加フォーム
   const [newStyleName, setNewStyleName] = useState(''); // v5: 新規スタイル名
   const [newStylePrompt, setNewStylePrompt] = useState(''); // v5: 新規スタイルプロンプト
@@ -57,263 +47,116 @@ const ImageGenerator = () => {
   const [yamlJsonText, setYamlJsonText] = useState(''); // YAMLのJSONテキスト（編集用）
   const [yamlJapaneseTranslation, setYamlJapaneseTranslation] = useState(''); // YAMLの日本語訳
   const [isTranslatingYaml, setIsTranslatingYaml] = useState(false); // 翻訳中フラグ
-  const [historyPage, setHistoryPage] = useState(0);
-  const [hasMoreHistory, setHasMoreHistory] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
   const base64CacheRef = useRef(new Map());
 
   const presentError = useCallback((message, detail) => {
-    console.error(message, detail);
-    setError(message);
-  }, []);
+    const context = {
+      component: 'ImageGenerator',
+      userId: user?.id,
+    };
+    const userMessage = handleError(detail || message, context);
+    setError(userMessage);
+  }, [user?.id]);
 
-  const handleLogout = () => {
+  // 画像生成カスタムフック
+  // 履歴管理カスタムフック
+  const {
+    images: historyImages,
+    historyPage,
+    hasMoreHistory,
+    historyLoading,
+    loadHistories,
+    saveImageHistory,
+    deleteImageHistory,
+    refreshHistories,
+  } = useImageHistory({
+    onError: (errorMessage) => {
+      setError(errorMessage);
+    },
+  });
+
+  // スタイル管理カスタムフック
+  const {
+    styles,
+    stylesLoading,
+    loadStyles: refreshStyles,
+    saveStyle,
+    deleteStyle,
+    addStyle,
+  } = useStyleManagement({
+    onError: (errorMessage) => {
+      setError(errorMessage);
+    },
+  });
+
+  const { generate: generateImageFromService, loading: generationLoading, error: generationError } = useImageGeneration({
+    onSuccess: async (image) => {
+      // サムネイル生成を試みる
+      let thumbnailUrl = image.imageUrl;
+      try {
+        thumbnailUrl = await requestThumbnailFromApi(image.imageUrl, 200);
+        console.log('サムネイル生成成功');
+      } catch (thumbErr) {
+        console.warn('サムネイル生成に失敗しました。元画像を使用します:', thumbErr);
+      }
+
+      const newImage = {
+        ...image,
+        thumbnailUrl,
+        originalImage: uploadedImage ? uploadedImage : null,
+      };
+
+      // 成功時の処理
+      setImages(prev => {
+        if (!Array.isArray(prev)) {
+          console.warn('images状態が配列ではありません。初期化します。');
+          return [newImage];
+        }
+        return [newImage, ...prev];
+      });
+      setCurrentImageId(newImage.id);
+      setPrompt('');
+      setUploadedImage(null);
+      setMode('new');
+      setSelectedStyleId(null);
+      setObjectInputs({ person: '', background: '', other: '' });
+      setYamlInput('');
+      setShowRegenerateForm(false);
+
+      // 画像履歴の保存を試みる
+      try {
+        await saveImageHistory(newImage);
+      } catch (syncErr) {
+        console.warn('画像履歴の保存に失敗しました（画像は正常に生成されています）:', syncErr);
+      }
+    },
+    onError: (errorMessage) => {
+      setError(errorMessage);
+    },
+  });
+
+  const handleLogout = useCallback(() => {
     logout();
     navigate('/login');
-  };
-  const syncImageRecord = useCallback(async (image) => {
-    if (!user?.id) return;
-    try {
-      await persistImageHistory(image, supabase);
-    } catch (err) {
-      console.error('画像履歴の保存に失敗しました:', {
-        error: err,
-        message: err?.message,
-        details: err?.details,
-        hint: err?.hint,
-        code: err?.code,
-        image: {
-          id: image?.id,
-          prompt: image?.prompt?.substring(0, 50) + '...',
-          hasThumbnail: !!image?.thumbnailUrl,
-          hasFullImage: !!image?.fullImageUrl
-        }
-      });
-      const errorMessage = err?.message || err?.details || '画像履歴の保存に失敗しました';
-      presentError(`画像履歴の保存に失敗しました: ${errorMessage}`, err);
-      // エラーを再スローして、呼び出し元で処理できるようにする
-      throw err;
-    }
-  }, [user?.id, presentError]);
-
-  const deleteImageRecord = useCallback(async (imageId) => {
-    if (!user?.id) return;
-    try {
-      await removeImageHistory(imageId, supabase);
-    } catch (err) {
-      presentError('画像履歴の削除に失敗しました', err);
-    }
-  }, [user?.id, presentError]);
-
-  const syncStyleRecord = useCallback(async (style) => {
-    if (!user?.id) return;
-    try {
-      await requireSession(supabase);
-      console.log('🔍 スタイル保存リクエスト:', {
-        id: style.id,
-        user_id: user.id,
-        name: style.name,
-        prompt_length: style.prompt?.length || 0,
-        has_thumbnail: !!style.thumbnail,
-        source: style.source
-      });
-      
-      const { data, error } = await supabase
-        .from('image_styles')
-        .upsert({
-          id: style.id,
-          user_id: user.id,
-          name: style.name,
-          prompt: style.prompt,
-          thumbnail: style.thumbnail || null,
-          source: style.source || 'manual',
-          created_at: style.createdAt || new Date().toISOString(),
-        }, { onConflict: 'id' });
-      
-      if (error) {
-        console.error('❌ スタイル保存エラー:', {
-          error: error,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-          style: {
-            id: style.id,
-            name: style.name,
-            prompt: style.prompt?.substring(0, 50) + '...'
-          }
-        });
-        throw error;
-      }
-      
-      console.log('✅ スタイル保存成功:', data);
-    } catch (err) {
-      const errorMessage = err?.message || err?.details || 'スタイルの保存に失敗しました';
-      presentError(`スタイルの保存に失敗しました: ${errorMessage}`, err);
-      throw err; // エラーを再スロー
-    }
-  }, [user?.id, presentError]);
-
-  const deleteStyleRecord = useCallback(async (styleId) => {
-    if (!user?.id) return;
-    try {
-      await requireSession(supabase);
-      const { error } = await supabase
-        .from('image_styles')
-        .delete()
-        .eq('id', styleId)
-        .eq('user_id', user.id);
-      if (error) {
-        throw error;
-      }
-    } catch (err) {
-      presentError('スタイルの削除に失敗しました', err);
-    }
-  }, [user?.id, presentError]);
+  }, [logout, navigate]);
 
 
-  const loadStyles = useCallback(async () => {
-    if (!user?.id) {
-      setStyles(createDefaultStyles());
-      return;
-    }
-    try {
-      await requireSession(supabase);
-      const { data, error } = await supabase
-        .from('image_styles')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (error) {
-        throw error;
-      }
-      if (Array.isArray(data) && data.length > 0) {
-        setStyles(data.map(row => {
-          // promptフィールドがJSON文字列の場合はYAMLオブジェクトとして復元
-          let yaml = null;
-          let prompt = row.prompt;
-          try {
-            const parsed = JSON.parse(row.prompt);
-            if (typeof parsed === 'object' && parsed !== null) {
-              yaml = parsed;
-              // YAMLデータの場合は、promptフィールドにJSON文字列をそのまま保持
-              // プロンプト文字列が必要な場合は、使用時に生成する
-            }
-          } catch (e) {
-            // JSON解析に失敗した場合は通常のプロンプト文字列として扱う
-          }
-          
-          return {
-            id: row.id,
-            name: row.name,
-            prompt: prompt, // JSON文字列または通常のプロンプト文字列
-            yaml: yaml, // YAMLデータがあれば保持（オブジェクト形式）
-            thumbnail: row.thumbnail || null,
-            source: row.source || 'manual',
-            createdAt: row.created_at,
-          };
-        }));
-      } else {
-        setStyles(createDefaultStyles());
-      }
-    } catch (err) {
-      // エラーが発生した場合は無限ループを防ぐため、エラーを表示するだけ
-      console.error('スタイルの読み込みエラー:', err);
-      presentError('スタイルの読み込みに失敗しました', err);
-      setStyles(createDefaultStyles());
-      // エラー時はリトライしない
-    }
-  }, [user?.id, presentError]);
 
-  const loadHistories = useCallback(async ({ reset = false } = {}) => {
-    if (!user?.id) {
-      setImages([]);
-      setHasMoreHistory(false);
-      return;
-    }
-    setHistoryLoading(true);
-    try {
-      await requireSession(supabase);
-      // resetの場合は常に0から開始、そうでない場合は現在のhistoryPageを使用
-      const currentPage = reset ? 0 : historyPage;
-      const from = currentPage * HISTORY_PAGE_SIZE;
-      const to = from + HISTORY_PAGE_SIZE - 1;
-      const { data, error } = await supabase
-        .from('image_histories')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .range(from, to);
-      if (error) {
-        throw error;
-      }
-      const normalized = Array.isArray(data)
-        ? data.map(row => ({
-            id: row.id,
-            prompt: row.prompt,
-            thumbnailUrl: row.thumbnail_url,
-            // フルサイズ画像も復元（full_image_urlカラムが存在する場合）
-            fullImageUrl: row.full_image_url || null,
-            createdAt: row.created_at,
-            revision: row.revision || 0,
-            title: row.title || '',
-            saved: row.saved || false,
-          }))
-        : [];
-      setImages(prev => {
-        const next = reset ? [] : [...prev];
-        normalized.forEach(item => {
-          if (!next.find(existing => existing.id === item.id)) {
-            next.push(item);
-          }
-        });
-        return next.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      });
-      // resetの場合は1に設定、そうでない場合は次のページに進む
-      if (reset) {
-        setHistoryPage(1);
-      } else {
-        setHistoryPage(prev => prev + 1);
-      }
-      setHasMoreHistory(normalized.length === HISTORY_PAGE_SIZE);
-    } catch (err) {
-      // エラーが発生した場合は無限ループを防ぐため、エラーを表示するだけ
-      console.error('履歴の読み込みエラー:', err);
-      presentError('履歴の読み込みに失敗しました', err);
-      // エラー時はリトライしない
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, [user?.id, historyPage, presentError]);
+
+
+
+
+  // historyImagesが更新されたときにimagesも同期
+  useEffect(() => {
+    setImages(historyImages);
+  }, [historyImages]);
 
   useEffect(() => {
     if (!user?.id) {
       setImages([]);
-      setStyles(createDefaultStyles());
-      setHistoryPage(0);
-      setHasMoreHistory(false);
       return;
     }
-    // 無限ループを防ぐため、依存配列から関数を削除し、直接呼び出す
-    let isMounted = true;
-    
-    const fetchData = async () => {
-      setHistoryPage(0);
-      setHasMoreHistory(false);
-      if (isMounted) {
-        await loadStyles();
-        await loadHistories({ reset: true });
-      }
-    };
-    
-    fetchData();
-    
-    return () => {
-      isMounted = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]); // loadStylesとloadHistoriesを依存配列から削除
+  }, [user?.id]);
 
   // 画像をBase64に変換
   const imageToBase64 = useCallback((file) => {
@@ -375,26 +218,26 @@ const ImageGenerator = () => {
   };
 
   // ドラッグ開始
-  const handleDragStart = (e, imageId) => {
+  const handleDragStart = useCallback((e, imageId) => {
     e.dataTransfer.setData('imageId', imageId);
     e.dataTransfer.effectAllowed = 'move';
-  };
+  }, []);
 
   // ドラッグオーバー
-  const handleDragOver = (e) => {
+  const handleDragOver = useCallback((e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setIsDraggingOver(true);
-  };
+  }, []);
 
   // ドラッグリーブ
-  const handleDragLeave = (e) => {
+  const handleDragLeave = useCallback((e) => {
     e.preventDefault();
     setIsDraggingOver(false);
-  };
+  }, []);
 
   // ドロップ
-  const handleDrop = async (e) => {
+  const handleDrop = useCallback(async (e) => {
     e.preventDefault();
     setIsDraggingOver(false);
     
@@ -417,11 +260,16 @@ const ImageGenerator = () => {
           setError('この履歴画像のデータを取得できませんでした');
         }
       }
-  };
+  }, [images, presentError]);
+
+  // 画像履歴の逆順表示用メモ化
+  const reversedImages = useMemo(() => {
+    return [...images].reverse();
+  }, [images]);
 
   const generateImage = async (regenerateId = null, newPrompt = null) => {
     // F-07: オブジェクト入力がある場合はbuildFinalPromptを使用
-    const finalPrompt = buildFinalPrompt();
+    const finalPrompt = buildFinalPrompt;
     const promptToUse = newPrompt || (finalPrompt.trim() ? finalPrompt : prompt);
     if (!promptToUse.trim()) {
       setError('プロンプトを入力してください');
@@ -609,7 +457,7 @@ const ImageGenerator = () => {
         
         // 画像履歴の保存を試みる（エラーが発生しても処理は続行）
         try {
-          await syncImageRecord(newImage);
+          await saveImageHistory(newImage);
         } catch (syncErr) {
           // 画像履歴の保存に失敗しても、画像生成自体は成功しているので警告のみ
           console.warn('画像履歴の保存に失敗しました（画像は正常に生成されています）:', syncErr);
@@ -628,32 +476,31 @@ const ImageGenerator = () => {
         throw new Error(`画像の保存に失敗しました: ${stateErr.message}`);
       }
     } catch (err) {
-      const errorMessage = err.message || 'エラーが発生しました';
-      presentError(errorMessage, err);
+      presentError('画像生成に失敗しました', err);
     } finally {
       // エラーが発生しても必ずローディング状態を解除
       setLoading(false);
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = useCallback((e) => {
     e.preventDefault();
     generateImage();
-  };
+  }, [generateImage]);
 
-  const handleRegenerate = () => {
+  const handleRegenerate = useCallback(() => {
     setShowRegenerateForm(true);
-  };
+  }, []);
 
-  const handleRegenerateSubmit = (e) => {
+  const handleRegenerateSubmit = useCallback((e) => {
     e.preventDefault();
     const regeneratePrompt = e.target.regeneratePrompt.value;
     if (currentImageId) {
       generateImage(currentImageId, regeneratePrompt);
     }
-  };
+  }, [currentImageId, generateImage]);
 
-  const handleFileUpload = async (e) => {
+  const handleFileUpload = useCallback(async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -670,9 +517,9 @@ const ImageGenerator = () => {
     } catch (err) {
       presentError('画像の読み込みに失敗しました', err);
     }
-  };
+  }, [imageToBase64, presentError]);
 
-  const handleCheckboxChange = (imageId) => {
+  const handleCheckboxChange = useCallback((imageId) => {
     setSelectedImageIds(prev => {
       const newSet = new Set(prev);
       if (newSet.has(imageId)) {
@@ -682,9 +529,9 @@ const ImageGenerator = () => {
       }
       return newSet;
     });
-  };
+  }, []);
 
-  const handleBulkDownload = async () => {
+  const handleBulkDownload = useCallback(async () => {
     if (selectedImageIds.size === 0) {
       setError('ダウンロードする画像を選択してください');
       return;
@@ -746,11 +593,11 @@ const ImageGenerator = () => {
           ? { ...img, saved: true }
           : img
       ));
-      updatedList.forEach(syncImageRecord);
+      updatedList.forEach(saveImageHistory);
     } catch (err) {
       presentError('ダウンロードに失敗しました', err);
     }
-  };
+  }, [selectedImageIds, images, setError, setImages, saveImageHistory, presentError]);
 
   // v5: スタイルをプロンプトに適用（旧実装、後方互換性のため残す）
   const handleStyleClick = (stylePrompt) => {
@@ -880,7 +727,7 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
   };
 
   // F-07: 最終プロンプト構築
-  const buildFinalPrompt = () => {
+  const buildFinalPrompt = useMemo(() => {
     // 現在のYAMLデータからプロンプトを生成
     if (currentYamlData) {
       // PromptMakerコンポーネント内のgeneratePromptFromYaml関数と同じロジックを使用
@@ -918,7 +765,7 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
     }
     
     return parts.join(', ');
-  };
+  }, [currentYamlData, yamlInput, selectedStyleId, styles, objectInputs, prompt]);
 
   // YAMLからプロンプトを生成（ImageGeneratorコンポーネント用の簡易版）
   const generatePromptFromYaml = (yaml) => {
@@ -995,7 +842,7 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
       alert('YAMLデータがありません。スタイルライブラリからスタイルを適用してください。');
       return;
     }
-    const finalPrompt = buildFinalPrompt();
+    const finalPrompt = buildFinalPrompt;
     if (!finalPrompt.trim()) {
       setError('YAML形式でスタイル・人物・背景を入力するか、プロンプトを直接入力してください');
       return;
@@ -1076,7 +923,7 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
           ));
         }
 
-        syncStyleRecord(updatedStyle).catch(err => {
+        saveStyle(updatedStyle).catch(err => {
           console.warn('スタイルの保存に失敗しました（サムネイルは設定されています）:', err);
         });
 
@@ -1105,7 +952,7 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
     };
 
     setStyles(prev => [...prev, newStyle]);
-    syncStyleRecord(newStyle).catch(err => {
+    saveStyle(newStyle).catch(err => {
       console.warn('スタイルの保存に失敗しました（スタイルは追加されています）:', err);
     });
     setNewStyleName('');
@@ -1116,7 +963,7 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
   // v5: スタイルを削除
   const handleDeleteStyle = (styleId) => {
     setStyles(prev => prev.filter(s => s.id !== styleId));
-    deleteStyleRecord(styleId);
+    deleteStyle(styleId);
   };
 
   // スタイルを編集開始
@@ -1152,7 +999,7 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
     setEditStyleName('');
     setEditStylePrompt('');
     if (updatedStyle) {
-      syncStyleRecord(updatedStyle).catch(err => {
+      saveStyle(updatedStyle).catch(err => {
         console.warn('スタイルの保存に失敗しました（スタイルは更新されています）:', err);
       });
     }
@@ -1178,13 +1025,13 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
     
     // データベースに保存を試みる
     try {
-      await syncStyleRecord(style);
+      await saveStyle(style);
       console.log('✅ スタイルライブラリに追加・保存成功:', style.name);
     } catch (err) {
       console.warn('⚠️ スタイルの保存に失敗しました（スタイルは追加されています）:', err);
       // エラーが発生しても、ローカル状態には追加されているので、ユーザーには通知しない
     }
-  }, [syncStyleRecord]);
+  }, [saveStyle]);
 
   // 画像を削除
   const handleDeleteImage = async (imageId, e) => {
@@ -1212,7 +1059,7 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
         if (quickLookImage && quickLookImage.id === imageId) {
           setQuickLookImage(null);
         }
-        await deleteImageRecord(imageId);
+        await deleteImageHistory(imageId);
       } catch (err) {
         presentError('画像の削除に失敗しました', err);
       }
@@ -1220,34 +1067,38 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
   };
 
   // F-03: タイトル編集開始
-  const handleStartEditTitle = (imageId, currentTitle) => {
+  const handleStartEditTitle = useCallback((imageId, currentTitle) => {
     setEditingTitleId(imageId);
     setEditingTitle(currentTitle || '');
-  };
+  }, []);
 
   // F-03: タイトル保存
-  const handleSaveTitle = (imageId) => {
+  const handleSaveTitle = useCallback((imageId, newTitle) => {
+    const title = newTitle !== undefined ? newTitle : editingTitle;
     const targetImage = images.find(img => img.id === imageId);
-    const updatedImage = targetImage ? { ...targetImage, title: editingTitle } : null;
+    const updatedImage = targetImage ? { ...targetImage, title } : null;
     setImages(prev => prev.map(img =>
       img.id === imageId
-        ? { ...img, title: editingTitle }
+        ? { ...img, title }
         : img
     ));
     setEditingTitleId(null);
     setEditingTitle('');
     if (updatedImage) {
-      syncImageRecord(updatedImage);
+      saveImageHistory(updatedImage);
     }
-  };
+  }, [images, editingTitle, saveImageHistory]);
+
+  // タイトル編集キャンセル
+  const handleCancelEditTitle = useCallback(() => {
+    setEditingTitleId(null);
+    setEditingTitle('');
+  }, []);
 
   // F-04: クイックルック表示
-  const handleShowQuickLook = (imageId) => {
-    const image = images.find(img => img && img.id === imageId);
-    if (image) {
-      setQuickLookImage(image);
-    }
-  };
+  const handleShowQuickLook = useCallback((image) => {
+    setQuickLookImage(image);
+  }, []);
 
   // CSVファイルとしてダウンロードする関数
   const saveToCSV = async (image) => {
@@ -1373,7 +1224,7 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
           ? { ...img, saved: true }
           : img
       ));
-      syncImageRecord(updatedImage);
+      saveImageHistory(updatedImage);
     } catch (err) {
       presentError('ダウンロードに失敗しました', err);
     }
@@ -1847,137 +1698,24 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
             {images.length === 0 ? (
               <p className="empty-history">まだ画像が生成されていません</p>
             ) : (
-              [...images].reverse().map((img) => (
-                <div
+              reversedImages.map((img) => (
+                <HistoryItem
                   key={`${img.id}-${img.revision}`}
-                  className={`history-item ${currentImageId === img.id ? 'active' : ''}`}
-                >
-                  <div className="history-item-header">
-                    <input
-                      type="checkbox"
-                      checked={selectedImageIds.has(img.id)}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        handleCheckboxChange(img.id);
-                      }}
-                      className="history-checkbox"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <span className="history-date">
-                      {new Date(img.createdAt).toLocaleString('ja-JP')}
-                      {img.revision > 0 && <span className="revision-badge">v{img.revision + 1}</span>}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleDeleteImage(img.id, e);
-                      }}
-                      className="delete-image-button"
-                      title="削除"
-                      type="button"
-                      style={{ cursor: 'pointer', zIndex: 10 }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                  {/* F-03: タイトル編集 */}
-                  <div className="history-item-title" style={{ marginBottom: '8px' }}>
-                    {editingTitleId === img.id ? (
-                      <input
-                        type="text"
-                        value={editingTitle}
-                        onChange={(e) => setEditingTitle(e.target.value)}
-                        onBlur={() => handleSaveTitle(img.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleSaveTitle(img.id);
-                          }
-                          if (e.key === 'Escape') {
-                            setEditingTitleId(null);
-                            setEditingTitle('');
-                          }
-                        }}
-                        autoFocus
-                        style={{ width: '100%', padding: '4px', fontSize: '12px' }}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStartEditTitle(img.id, img.title || '');
-                        }}
-                        style={{ 
-                          cursor: 'pointer', 
-                          fontSize: '12px',
-                          fontWeight: 'bold',
-                          display: 'block',
-                          padding: '4px'
-                        }}
-                        title="クリックしてタイトルを編集"
-                      >
-                        {img.title || `画像 ${new Date(img.createdAt).toLocaleString('ja-JP')}`}
-                      </span>
-                    )}
-                  </div>
-                  <div 
-                    className="history-image-wrapper" 
-                    title={img.prompt}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, img.id)}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleShowQuickLook(img.id);
-                    }}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <img 
-                      src={img.thumbnailUrl || img.imageUrl} 
-                      alt="History" 
-                      onError={(e) => {
-                        console.error('履歴画像の読み込みエラー:', img);
-                        e.target.style.display = 'none';
-                      }}
-                    />
-                  </div>
-                  <p className="history-prompt" title={img.prompt || ''} style={{ fontSize: '11px', marginTop: '4px' }}>
-                    {img.prompt && img.prompt.length > 50 ? `${img.prompt.substring(0, 50)}...` : (img.prompt || 'プロンプトなし')}
-                  </p>
-                  <div 
-                    className="history-item-actions" 
-                    style={{ marginTop: '8px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleDownloadImage(img.id);
-                      }}
-                      className="download-button"
-                      style={{ fontSize: '11px', padding: '4px 8px', cursor: 'pointer', zIndex: 10 }}
-                      title="ダウンロード"
-                      type="button"
-                    >
-                      💾
-                    </button>
-                    {/* F-06: スタイルのサムネとして使用 */}
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleSetAsStyleThumbnail(img.id);
-                      }}
-                      className="set-thumbnail-button"
-                      style={{ fontSize: '11px', padding: '4px 8px', cursor: 'pointer', zIndex: 10 }}
-                      title="スタイルのサムネとして使用"
-                      type="button"
-                    >
-                      🖼️
-                    </button>
-                  </div>
-                </div>
+                  image={img}
+                  isActive={currentImageId === img.id}
+                  isSelected={selectedImageIds.has(img.id)}
+                  editingTitleId={editingTitleId}
+                  editingTitle={editingTitle}
+                  onCheckboxChange={handleCheckboxChange}
+                  onImageClick={setCurrentImageId}
+                  onDeleteImage={handleDeleteImage}
+                  onStartEditTitle={handleStartEditTitle}
+                  onSaveTitle={handleSaveTitle}
+                  onCancelEditTitle={handleCancelEditTitle}
+                  onTitleChange={setEditingTitle}
+                  onDragStart={handleDragStart}
+                  onShowQuickLook={handleShowQuickLook}
+                />
               ))
             )}
             {hasMoreHistory && (
@@ -2150,1407 +1888,5 @@ YAMLデータの構造を保持しながら、すべての英語のテキスト�
   );
 };
 
-// プロンプトモードコンポーネント
-const PromptMaker = ({ onStyleCreated = () => {} }) => {
-  const { user } = useAuth();
-  const [masterPrompt, setMasterPrompt] = useState('');
-  const [yamlData, setYamlData] = useState(null);
-  const [selectedField, setSelectedField] = useState(null);
-  const [inputMode, setInputMode] = useState('select'); // 'select' | 'text'
-  const [templates, setTemplates] = useState([]);
-  const [currentTemplate, setCurrentTemplate] = useState(null);
-  const [templateName, setTemplateName] = useState('');
-  const [isParsing, setIsParsing] = useState(false); // プロンプト解析中のローディング状態
-  const [parseError, setParseError] = useState(null); // 解析エラー
-  const [templateError, setTemplateError] = useState(null);
-  const [selectedOptionIndex, setSelectedOptionIndex] = useState(0); // 選択肢モード内での選択インデックス
-  const [currentMode, setCurrentMode] = useState('field'); // 'field' | 'select' | 'text' - 現在のモード
-  const [isEditingYaml, setIsEditingYaml] = useState(false); // YAML編集モード
-  const [editingYamlText, setEditingYamlText] = useState(''); // 編集中のYAMLテキスト
-  const [fieldOptions, setFieldOptions] = useState({}); // フィールドごとの選択肢 { fieldPath: [options] }
-  const [isGeneratingOptions, setIsGeneratingOptions] = useState(false); // AI選択肢生成中
-  const [isEditingOptions, setIsEditingOptions] = useState(false); // 選択肢編集モード
-  const [editingOptionsText, setEditingOptionsText] = useState(''); // 編集中の選択肢テキスト
-  const surfaceTemplateError = useCallback((message, detail) => {
-    console.error(message, detail);
-    setTemplateError(message);
-  }, []);
-
-  const persistTemplate = useCallback(async (template) => {
-    if (!user?.id) return;
-    try {
-      await requireSession(supabase);
-      const payload = {
-        id: template.id,
-        user_id: user.id,
-        name: template.name,
-        yaml: template.yaml || {},
-        original_prompt: template.originalPrompt || '',
-        field_options: template.fieldOptions || {},
-        created_at: template.createdAt || new Date().toISOString(),
-      };
-      
-      console.log('🔍 テンプレート保存リクエスト:', payload);
-      
-      const { data, error } = await supabase
-        .from('prompt_templates')
-        .upsert(payload, { onConflict: 'id' });
-      
-      if (error) {
-        console.error('❌ テンプレート保存エラー詳細:', {
-          error,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        });
-        throw error;
-      }
-      
-      console.log('✅ テンプレート保存成功:', data);
-      setTemplateError(null);
-    } catch (err) {
-      console.error('テンプレート保存エラー:', err);
-      const errorMessage = err?.message || err?.details || 'テンプレートの保存に失敗しました';
-      surfaceTemplateError(`テンプレートの保存に失敗しました: ${errorMessage}`, err);
-    }
-  }, [user?.id, surfaceTemplateError]);
-
-  const deleteTemplate = useCallback(async (templateId) => {
-    if (!user?.id) return;
-    if (!window.confirm('このテンプレートを削除しますか？')) return;
-    
-    try {
-      await requireSession(supabase);
-      const { error } = await supabase
-        .from('prompt_templates')
-        .delete()
-        .eq('id', templateId)
-        .eq('user_id', user.id);
-      
-      if (error) {
-        console.error('❌ テンプレート削除エラー:', {
-          error: error,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        });
-        throw error;
-      }
-      
-      // ローカル状態からも削除
-      setTemplates(prev => prev.filter(t => t.id !== templateId));
-      
-      // 現在のテンプレートが削除された場合はクリア
-      if (currentTemplate?.id === templateId) {
-        setCurrentTemplate(null);
-        setYamlData(null);
-        setMasterPrompt('');
-        setFieldOptions({});
-      }
-      
-      console.log('✅ テンプレート削除成功');
-    } catch (err) {
-      const errorMessage = err?.message || err?.details || 'テンプレートの削除に失敗しました';
-      surfaceTemplateError(`テンプレートの削除に失敗しました: ${errorMessage}`, err);
-    }
-  }, [user?.id, currentTemplate, surfaceTemplateError]);
-
-  useEffect(() => {
-    if (!user?.id) {
-      setTemplates([]);
-      setTemplateError(null);
-      return;
-    }
-
-    let active = true;
-
-    const fetchTemplates = async () => {
-      try {
-        await requireSession(supabase);
-        const { data, error } = await supabase
-          .from('prompt_templates')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
-        if (error) {
-          throw error;
-        }
-        if (!active) return;
-        setTemplates(Array.isArray(data)
-          ? data.map(row => ({
-              id: row.id,
-              name: row.name,
-              yaml: row.yaml || {},
-              originalPrompt: row.original_prompt || '',
-              fieldOptions: row.field_options || {},
-              createdAt: row.created_at,
-            }))
-          : []);
-        setTemplateError(null);
-      } catch (err) {
-        if (!active) return;
-        surfaceTemplateError('テンプレートの取得に失敗しました', err);
-      }
-    };
-
-    fetchTemplates();
-
-    return () => {
-      active = false;
-    };
-  }, [user?.id, surfaceTemplateError]);
-
-  // YAMLフィールドを取得
-  const getYamlFields = (yaml) => {
-    const fields = [];
-    const traverse = (obj, path = '') => {
-      for (const [key, value] of Object.entries(obj)) {
-        const currentPath = path ? `${path}.${key}` : key;
-        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-          traverse(value, currentPath);
-        } else {
-          fields.push({ path: currentPath, value, key });
-        }
-      }
-    };
-    traverse(yaml);
-    return fields;
-  };
-
-  // 選択肢を取得
-  const getOptions = (fieldPath) => {
-    // フィールドごとに保存された選択肢があればそれを返す
-    if (fieldOptions[fieldPath] && fieldOptions[fieldPath].length > 0) {
-      return fieldOptions[fieldPath];
-    }
-    // デフォルト選択肢
-    const defaultOptions = ['Red', 'Blue', 'Green', 'Yellow', 'Orange', 'Purple', 'Pink', 'Black', 'White'];
-    return defaultOptions;
-  };
-
-  // AIで選択肢を生成
-  const generateOptionsWithAI = async (fieldPath) => {
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-    if (!apiKey) {
-      alert('OpenAI APIキーが設定されていません。.env に VITE_OPENAI_API_KEY=... を設定してください。');
-      return;
-    }
-
-    setIsGeneratingOptions(true);
-    try {
-      const field = getYamlFields(yamlData).find(f => f.path === fieldPath);
-      const fieldName = field?.key || fieldPath.split('.').pop();
-      const currentValue = field?.value || '';
-
-      const systemPrompt = `あなたは画像生成プロンプトの選択肢を生成する専門家です。
-フィールド名と現在の値に基づいて、適切な選択肢を10個程度生成してください。
-選択肢はJSON配列形式で返してください。説明文は不要です。
-
-例:
-["選択肢1", "選択肢2", "選択肢3", ...]`;
-
-      const userPrompt = `フィールド名: ${fieldName}
-フィールドパス: ${fieldPath}
-現在の値: ${currentValue}
-YAML構造: ${JSON.stringify(yamlData, null, 2)}
-
-このフィールドに適した選択肢を10個程度生成してください。`;
-
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: 0.7
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `API呼び出しに失敗しました (${response.status})`);
-      }
-
-      const data = await response.json();
-      const content = data.choices[0]?.message?.content;
-      
-      if (!content) {
-        throw new Error('APIからの応答が空です');
-      }
-
-      // JSONをパース
-      let parsed;
-      try {
-        parsed = JSON.parse(content);
-      } catch (e) {
-        // JSON形式でない場合は、配列として直接パースを試みる
-        const arrayMatch = content.match(/\[.*\]/s);
-        if (arrayMatch) {
-          parsed = JSON.parse(arrayMatch[0]);
-        } else {
-          throw new Error('応答がJSON形式ではありません');
-        }
-      }
-
-      // 選択肢を抽出（配列またはオブジェクトから）
-      let options = [];
-      if (Array.isArray(parsed)) {
-        options = parsed;
-      } else if (parsed.options && Array.isArray(parsed.options)) {
-        options = parsed.options;
-      } else if (parsed.choices && Array.isArray(parsed.choices)) {
-        options = parsed.choices;
-      } else {
-        // オブジェクトの値から配列を探す
-        const values = Object.values(parsed);
-        const arrayValue = values.find(v => Array.isArray(v));
-        if (arrayValue) {
-          options = arrayValue;
-        }
-      }
-
-      if (options.length === 0) {
-        throw new Error('選択肢が見つかりませんでした');
-      }
-
-      // 選択肢を保存
-      setFieldOptions(prev => ({
-        ...prev,
-        [fieldPath]: options
-      }));
-
-      alert(`${options.length}個の選択肢を生成しました！`);
-    } catch (err) {
-      console.error('AI選択肢生成エラー:', err);
-      alert(`選択肢の生成に失敗しました: ${err.message}`);
-    } finally {
-      setIsGeneratingOptions(false);
-    }
-  };
-
-  // 選択肢を手動で編集
-  const handleEditOptions = (fieldPath) => {
-    const currentOptions = getOptions(fieldPath);
-    setEditingOptionsText(currentOptions.join('\n'));
-    setIsEditingOptions(fieldPath);
-  };
-
-  // 選択肢を保存
-  const handleSaveOptions = (fieldPath) => {
-    const options = editingOptionsText
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0);
-    
-    if (options.length === 0) {
-      alert('選択肢を入力してください');
-      return;
-    }
-
-    setFieldOptions(prev => ({
-      ...prev,
-      [fieldPath]: options
-    }));
-    setIsEditingOptions(false);
-    setEditingOptionsText('');
-    alert('選択肢を保存しました！');
-  };
-
-  // 選択肢編集をキャンセル
-  const handleCancelEditOptions = () => {
-    setIsEditingOptions(false);
-    setEditingOptionsText('');
-  };
-
-  // キーボード操作
-  useEffect(() => {
-    if (!yamlData) return;
-
-    const handleKeyDown = (e) => {
-      // 入力フィールドにフォーカスがある場合は無視（ただしシフトキーは有効）
-      if ((e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') && !e.shiftKey) {
-        return;
-      }
-
-      const isShift = e.shiftKey;
-
-      if (e.key === 'ArrowUp' && !isShift) {
-        e.preventDefault();
-        if (currentMode === 'field') {
-          const fields = getYamlFields(yamlData);
-          const currentIndex = fields.findIndex(f => f.path === selectedField?.path);
-          if (currentIndex > 0) {
-            setSelectedField(fields[currentIndex - 1]);
-            setSelectedOptionIndex(0);
-          }
-        }
-      } else if (e.key === 'ArrowDown' && !isShift) {
-        e.preventDefault();
-        if (currentMode === 'field') {
-          const fields = getYamlFields(yamlData);
-          const currentIndex = fields.findIndex(f => f.path === selectedField?.path);
-          if (currentIndex < fields.length - 1) {
-            setSelectedField(fields[currentIndex + 1]);
-            setSelectedOptionIndex(0);
-          } else if (fields.length > 0 && currentIndex === -1) {
-            setSelectedField(fields[0]);
-            setSelectedOptionIndex(0);
-          }
-        }
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        if (isShift) {
-          // シフト+右: 選択肢モードに移動
-          if (currentMode === 'field' || currentMode === 'text') {
-            setCurrentMode('select');
-            setInputMode('select');
-            // 現在の値に一致する選択肢があればそのインデックスを設定
-            const options = getOptions(selectedField?.path);
-            const currentValue = String(selectedField?.value || '');
-            const matchingIndex = options.findIndex(opt => opt === currentValue);
-            setSelectedOptionIndex(matchingIndex >= 0 ? matchingIndex : 0);
-          } else if (currentMode === 'select') {
-            // 選択肢モード内で選択肢を移動
-            const options = getOptions(selectedField?.path);
-            if (selectedOptionIndex < options.length - 1) {
-              setSelectedOptionIndex(selectedOptionIndex + 1);
-            }
-          }
-        } else {
-          // 右キー: 選択肢モードに移動（シフトなし）
-          if (currentMode === 'field') {
-            setCurrentMode('select');
-            setInputMode('select');
-            // 現在の値に一致する選択肢があればそのインデックスを設定
-            const options = getOptions(selectedField?.path);
-            const currentValue = String(selectedField?.value || '');
-            const matchingIndex = options.findIndex(opt => opt === currentValue);
-            setSelectedOptionIndex(matchingIndex >= 0 ? matchingIndex : 0);
-          } else if (currentMode === 'select') {
-            // 選択肢モード内で選択肢を移動
-            const options = getOptions(selectedField?.path);
-            if (selectedOptionIndex < options.length - 1) {
-              setSelectedOptionIndex(selectedOptionIndex + 1);
-            }
-          }
-        }
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        if (isShift) {
-          // シフト+左: 選択肢モード → フィールドモード（1回目） → 自由記述モード（2回目）
-          if (currentMode === 'select') {
-            setCurrentMode('field');
-          } else if (currentMode === 'field') {
-            setCurrentMode('text');
-            setInputMode('text');
-          } else if (currentMode === 'text') {
-            // 自由記述モードからはフィールドモードに戻る
-            setCurrentMode('field');
-          }
-        } else {
-          // 左キー: 選択肢モード内で選択肢を移動
-          if (currentMode === 'select') {
-            if (selectedOptionIndex > 0) {
-              setSelectedOptionIndex(selectedOptionIndex - 1);
-            }
-          } else if (currentMode === 'field') {
-            setCurrentMode('text');
-            setInputMode('text');
-          }
-        }
-      } else if (e.key === 'Enter' && currentMode === 'select') {
-        e.preventDefault();
-        // 選択肢を確定
-        const options = getOptions(selectedField?.path);
-        if (options[selectedOptionIndex] && selectedField) {
-          // 直接更新処理を実行
-          const newYaml = { ...yamlData };
-          const keys = selectedField.path.split('.');
-          let current = newYaml;
-          for (let i = 0; i < keys.length - 1; i++) {
-            if (!current[keys[i]]) {
-              current[keys[i]] = {};
-            }
-            current = current[keys[i]];
-          }
-          current[keys[keys.length - 1]] = options[selectedOptionIndex];
-          setYamlData(newYaml);
-          if (currentTemplate) {
-            setCurrentTemplate({ ...currentTemplate, yaml: newYaml });
-          }
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [yamlData, selectedField, currentMode, selectedOptionIndex, currentTemplate]);
-
-  // プロンプトをYAMLに変換（OpenAI API使用）
-  const parsePromptToYaml = async (prompt) => {
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('OpenAI APIキーが設定されていません。.env に VITE_OPENAI_API_KEY=... を設定してください。');
-    }
-
-    // より強力なモデルを使用（環境変数で切り替え可能）
-    const model = import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini';
-
-    const systemPrompt = `あなたは画像生成プロンプトを詳細に構造化されたJSONに変換する専門家です。
-入力されたプロンプトを徹底的に分析し、プロンプト内のすべての情報を柔軟に構造化してJSON形式で返してください。
-
-**柔軟な構造化の原則:**
-
-1. **プロンプトの内容に応じて、必要なセクションを動的に作成してください**
-   - プロンプトに含まれる情報の種類に応じて、適切なセクション名と構造を決定してください
-   - 固定のセクションに限定せず、プロンプトの内容に基づいて新しいセクションを作成することも可能です
-
-2. **一般的なセクション（参考例）:**
-   - **subject** (被写体): description, gender, age など
-   - **style** (スタイル): description, type, technique, aesthetic など
-   - **attire_policy** (服装ポリシー): allowed, forbidden など
-   - **hair_tone_lock** (髪色ロック): base_color, mid_glaze, depth_hint, highlight_max, rule など
-   - **pose_and_framing** (ポーズとフレーミング): shot, angle, posture, hands, contrast など
-   - **palette** (パレット): skin, hair, clothing_washes, saturation, negative_space など
-   - **lighting_mood** (照明とムード): type, rim_light, atmosphere など
-   - **background** (背景): type, color, description, strokes, layout など
-   - **styling_keywords** (スタイリングキーワード): キーワードのリスト
-   - **quality_flags** (品質フラグ): 品質フラグのリスト
-   - **format** (フォーマット): aspectRatio, style, quality, stylize など
-   - **optional_midjourney** (Midjourney固有): prompt_suffix, params など
-   - **optional_negative_tokens** (ネガティブトークン): ネガティブトークンのリスト
-
-3. **セクション名の認識:**
-   - プロンプト内の見出しやセクション名（例: "ATTIRE POLICY", "HAIR TONE LOCK", "Pose & framing", "Palette guide" など）を認識してください
-   - セクション名を適切なJSONキー名（スネークケース推奨）に変換してください
-   - 例: "ATTIRE POLICY" → "attire_policy", "Hair Tone Lock" → "hair_tone_lock"
-
-4. **データ型の適切な処理:**
-   - HEXコード（例: #1F242A）や色の範囲（例: #1F242A-#2B2F36）を正確に抽出してください
-   - リスト形式の情報（例: "no kimono, no yukata, no hakama"）は配列として抽出してください
-   - 技術的パラメータ（--ar, --style, --quality, --stylize）をformatセクションに配置してください
-   - ネストされた情報は適切に階層化してください
-
-5. **柔軟性の確保:**
-   - プロンプトに新しい種類の情報が含まれている場合、適切なセクション名と構造を作成してください
-   - セクション名は、プロンプトの内容を反映した意味のある名前にしてください
-   - プロンプトに含まれていない情報は、そのキーを省略してください（空文字列ではなく）
-
-**重要な指示:**
-- プロンプトに含まれるすべての詳細情報を可能な限り抽出してください
-- プロンプトの構造やセクション名を尊重し、それに基づいて構造化してください
-- 固定のセクションリストに縛られず、プロンプトの内容に応じて柔軟に対応してください
-- JSON形式のみを返し、説明文やコメントは含めないでください
-- 可能な限り詳細に構造化してください`;
-
-    // Few-shot learningの例（期待される出力形式を示す）
-    const exampleOutput = {
-      "subject": {
-        "description": "adult Japanese woman holding a bouquet of flowers gently in her arms",
-        "gender": "女性"
-      },
-      "style": {
-        "description": "Delicate Japanese watercolor illustration on textured washi paper. Hand-drawn pencil line (very thin, slightly uneven), airy grain. Face and hands highly refined; clothing and background simplified as soft abstract washes. Low-mid saturation, high-key whites, generous negative space.",
-        "type": "watercolor",
-        "technique": ["wet-on-wet", "glazing", "feathered_edges", "controlled_bloom_backrun", "visible_paper_tooth", "subtle_pigment_granulation", "dry_brush_accents", "lost_and_found_contours"],
-        "aesthetic": "Japanese watercolor illustration, washi paper texture, pencil line, matte, selective color, airy, serene, semi-realistic, pixiv-trending, detail-contrast, abstract washes, modern clothing"
-      },
-      "attire_policy": {
-        "allowed": ["contemporary everyday wear", "tank top", "T-shirt", "blouse", "knit", "light sportswear", "simple dress"],
-        "forbidden": ["kimono", "yukata", "hakama", "furisode", "obi sash", "kimono collars", "wide kimono sleeves", "traditional patterns", "seigaiha", "asanoha"]
-      },
-      "hair_tone_lock": {
-        "base_color": ["#1F242A", "#2B2F36"],
-        "mid_glaze": ["#343A42", "#404650"],
-        "depth_hint": "sepia/indigo mix",
-        "highlight_max": "#B8C1C8",
-        "rule": [
-          "No gray, white, or blonde hair",
-          "At least 90% of the hair area must be tinted (avoid leaving paper white)",
-          "Lashes/eyebrows match hair tone",
-          "Include a few natural flyaway strands"
-        ]
-      },
-      "pose_and_framing": {
-        "shot": "waist/bust-up",
-        "angle": "gentle 3/4 or side profile",
-        "posture": "elegant, natural Japanese proportions",
-        "hands": "Japanese hands, slender and correct anatomy",
-        "contrast": "facial features smooth and precise; clothing & background kept painterly"
-      },
-      "palette": {
-        "skin": {
-          "base": "paper white",
-          "accents": "#EFCAD3"
-        },
-        "hair": {
-          "tones": ["deep black-brown (cool bias)", "#1F242A-#404650 range"]
-        },
-        "clothing_washes": ["#6E7A87", "#B8C1C8", "#F2DCE6", "#C9D7D2"],
-        "saturation": "restrained",
-        "negative_space": "preserve clean white paper areas"
-      },
-      "lighting_mood": {
-        "type": "soft ambient window light",
-        "rim_light": "gentle on cheek/nose",
-        "atmosphere": "serene, intimate, contemporary"
-      },
-      "background": {
-        "type": "plain white or very pale wash",
-        "strokes": "2-3 broad abstract strokes only (vertical or circular)",
-        "layout": "one side kept brightest for airy text space"
-      },
-      "styling_keywords": [
-        "Japanese watercolor illustration",
-        "washi paper texture",
-        "pencil line",
-        "matte",
-        "selective color",
-        "airy",
-        "serene",
-        "semi-realistic",
-        "pixiv-trending",
-        "detail-contrast",
-        "abstract washes",
-        "modern clothing"
-      ],
-      "quality_flags": [
-        "masterpiece",
-        "best quality",
-        "high detail",
-        "clean composition"
-      ],
-      "format": {
-        "aspectRatio": "3:4",
-        "style": "raw",
-        "quality": 1,
-        "stylize": 50
-      },
-      "optional_midjourney": {
-        "prompt_suffix": "(hair: deep cool black-brown)++ (no white hair)++ (no gray hair)++ (no kimono)++ (no yukata)++ (no hakama)++ (no obi)++ (modern clothing)++",
-        "params": {
-          "ar": "3:4",
-          "style": "raw",
-          "quality": 1,
-          "stylize": 50
-        }
-      },
-      "optional_negative_tokens": [
-        "white hair",
-        "silver hair",
-        "gray hair",
-        "platinum hair",
-        "overexposed hair",
-        "blown highlights",
-        "kimono",
-        "yukata",
-        "hakama",
-        "furisode",
-        "obi",
-        "kimono collar",
-        "wide kimono sleeves",
-        "traditional Japanese clothing",
-        "traditional patterns",
-        "seigaiha",
-        "asanoha"
-      ]
-    };
-
-    const userPrompt = `以下のプロンプトを詳細に構造化されたJSONに変換してください。プロンプト内のすべての情報を可能な限り抽出し、適切なセクションに配置してください。プロンプトの内容に応じて、必要なセクションを柔軟に作成してください。上記の例を参考に、同様の詳細さで構造化してください:\n\n${prompt}`;
-
-    // デバッグ用: プロンプトをコンソールに出力（開発環境での確認用）
-    if (import.meta.env.DEV) {
-      console.log('📝 解析対象プロンプト:', prompt);
-      console.log('🤖 使用モデル:', model);
-    }
-
-    try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `例として、以下のような詳細な構造化を期待しています:\n${JSON.stringify(exampleOutput, null, 2)}` },
-            { role: 'assistant', content: JSON.stringify(exampleOutput) },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: 0.2, // 構造化タスクのため、より低い温度で一貫性を向上
-          response_format: { type: 'json_object' }
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `API呼び出しに失敗しました (${response.status})`);
-      }
-
-      const data = await response.json();
-      const content = data.choices[0]?.message?.content;
-      
-      if (!content) {
-        throw new Error('APIからの応答が空です');
-      }
-
-      // JSONをパース
-      const yaml = JSON.parse(content);
-      
-      // デバッグ用: 解析結果をコンソールに出力（開発環境での確認用）
-      if (import.meta.env.DEV) {
-        console.log('✅ 解析結果:', JSON.stringify(yaml, null, 2));
-        console.log('📊 抽出されたセクション:', Object.keys(yaml));
-      }
-      
-      // 空のオブジェクトを削除
-      const cleanYaml = {};
-      for (const [key, value] of Object.entries(yaml)) {
-        if (value && typeof value === 'object' && Object.keys(value).length > 0) {
-          cleanYaml[key] = value;
-        }
-      }
-
-      return cleanYaml;
-    } catch (err) {
-      console.error('OpenAI API エラー:', err);
-      throw err;
-    }
-  };
-
-  // テンプレート生成
-  const handleGenerateTemplate = async () => {
-    if (!masterPrompt.trim()) {
-      alert('マスタープロンプトを入力してください');
-      return;
-    }
-
-    setIsParsing(true);
-    setParseError(null);
-
-    try {
-      const yaml = await parsePromptToYaml(masterPrompt);
-      setYamlData(yaml);
-      setCurrentTemplate({ name: '', yaml, originalPrompt: masterPrompt });
-      const fields = getYamlFields(yaml);
-      if (fields.length > 0) {
-        setSelectedField(fields[0]);
-        setCurrentMode('field');
-        setSelectedOptionIndex(0);
-      }
-    } catch (err) {
-      setParseError(err.message || 'プロンプトの解析に失敗しました');
-      console.error('テンプレート生成エラー:', err);
-    } finally {
-      setIsParsing(false);
-    }
-  };
-
-  // YAML値を更新
-  const updateYamlValue = (path, value) => {
-    const newYaml = { ...yamlData };
-    const keys = path.split('.');
-    let current = newYaml;
-    for (let i = 0; i < keys.length - 1; i++) {
-      if (!current[keys[i]]) {
-        current[keys[i]] = {};
-      }
-      current = current[keys[i]];
-    }
-    current[keys[keys.length - 1]] = value;
-    setYamlData(newYaml);
-    if (currentTemplate) {
-      setCurrentTemplate({ ...currentTemplate, yaml: newYaml });
-    }
-  };
-
-  // YAMLからプロンプトを生成（再帰的にすべての情報を抽出）
-  const generatePromptFromYaml = (yaml) => {
-    if (!yaml || typeof yaml !== 'object') {
-      return '';
-    }
-
-    const parts = [];
-    
-    // 再帰的にオブジェクトを走査してプロンプトを構築
-    const traverse = (obj, prefix = '') => {
-      if (obj === null || obj === undefined) {
-        return;
-      }
-
-      if (Array.isArray(obj)) {
-        // 配列の場合は、各要素を処理
-        obj.forEach((item, index) => {
-          if (typeof item === 'string' && item.trim()) {
-            parts.push(item.trim());
-          } else if (typeof item === 'object' && item !== null) {
-            traverse(item, prefix);
-          }
-        });
-        return;
-      }
-
-      if (typeof obj !== 'object') {
-        // プリミティブ値の場合
-        if (typeof obj === 'string' && obj.trim()) {
-          parts.push(obj.trim());
-        } else if (typeof obj === 'number' || typeof obj === 'boolean') {
-          parts.push(String(obj));
-        }
-        return;
-      }
-
-      // オブジェクトの場合、各キーを処理
-      for (const [key, value] of Object.entries(obj)) {
-        if (value === null || value === undefined || value === '') {
-          continue;
-        }
-
-        // 特別な処理が必要なセクション
-        if (key === 'format') {
-          // formatセクションは技術的パラメータとして処理
-          if (value.aspectRatio) {
-            parts.push(`--ar ${value.aspectRatio}`);
-          }
-          if (value.style) {
-            parts.push(`--style ${value.style}`);
-          }
-          if (value.quality) {
-            parts.push(`--quality ${value.quality}`);
-          }
-          if (value.stylize) {
-            parts.push(`--stylize ${value.stylize}`);
-          }
-          // その他のformatプロパティも処理
-          for (const [formatKey, formatValue] of Object.entries(value)) {
-            if (!['aspectRatio', 'style', 'quality', 'stylize'].includes(formatKey)) {
-              if (typeof formatValue === 'string' && formatValue.trim()) {
-                parts.push(`--${formatKey} ${formatValue.trim()}`);
-              }
-            }
-          }
-        } else if (key === 'optional_midjourney') {
-          // Midjourneyのオプション
-          if (value.prompt_suffix) {
-            parts.push(value.prompt_suffix);
-          }
-          if (value.params) {
-            for (const [paramKey, paramValue] of Object.entries(value.params)) {
-              if (paramValue !== null && paramValue !== undefined && paramValue !== '') {
-                parts.push(`--${paramKey} ${paramValue}`);
-              }
-            }
-          }
-        } else if (key === 'optional_negative_tokens') {
-          // ネガティブトークン
-          if (Array.isArray(value)) {
-            const negativeTokens = value.filter(t => t && typeof t === 'string' && t.trim());
-            if (negativeTokens.length > 0) {
-              parts.push(`negative: ${negativeTokens.join(', ')}`);
-            }
-          }
-        } else if (key === 'styling_keywords') {
-          // スタイリングキーワード
-          if (Array.isArray(value)) {
-            const keywords = value.filter(k => k && typeof k === 'string' && k.trim());
-            if (keywords.length > 0) {
-              parts.push(keywords.join(', '));
-            }
-          }
-        } else if (key === 'quality_flags') {
-          // クオリティフラグ
-          if (Array.isArray(value)) {
-            const flags = value.filter(f => f && typeof f === 'string' && f.trim());
-            if (flags.length > 0) {
-              parts.push(flags.join(', '));
-            }
-          }
-        } else if (key === 'attire_policy') {
-          // 服装ポリシー
-          if (value.allowed && Array.isArray(value.allowed)) {
-            const allowed = value.allowed.filter(a => a && typeof a === 'string' && a.trim());
-            if (allowed.length > 0) {
-              parts.push(`allowed attire: ${allowed.join(', ')}`);
-            }
-          }
-          if (value.forbidden && Array.isArray(value.forbidden)) {
-            const forbidden = value.forbidden.filter(f => f && typeof f === 'string' && f.trim());
-            if (forbidden.length > 0) {
-              parts.push(`forbidden: ${forbidden.join(', ')}`);
-            }
-          }
-        } else if (key === 'hair_tone_lock') {
-          // 髪の色ロック
-          if (value.base_color && Array.isArray(value.base_color)) {
-            parts.push(`hair base color: ${value.base_color.join('-')}`);
-          }
-          if (value.mid_glaze && Array.isArray(value.mid_glaze)) {
-            parts.push(`hair mid glaze: ${value.mid_glaze.join('-')}`);
-          }
-          if (value.highlight_max) {
-            parts.push(`hair highlight max: ${value.highlight_max}`);
-          }
-          if (value.rule && Array.isArray(value.rule)) {
-            value.rule.forEach(rule => {
-              if (typeof rule === 'string' && rule.trim()) {
-                parts.push(rule.trim());
-              }
-            });
-          }
-        } else if (key === 'palette') {
-          // パレット
-          if (value.skin) {
-            if (value.skin.base) parts.push(`skin base: ${value.skin.base}`);
-            if (value.skin.accents) parts.push(`skin accents: ${value.skin.accents}`);
-          }
-          if (value.hair) {
-            if (value.hair.tones) {
-              if (Array.isArray(value.hair.tones)) {
-                parts.push(`hair tones: ${value.hair.tones.join(', ')}`);
-              } else if (typeof value.hair.tones === 'string') {
-                parts.push(`hair tones: ${value.hair.tones}`);
-              }
-            }
-          }
-          if (value.clothing_washes && Array.isArray(value.clothing_washes)) {
-            parts.push(`clothing washes: ${value.clothing_washes.join(', ')}`);
-          }
-          if (value.saturation) parts.push(`saturation: ${value.saturation}`);
-          if (value.negative_space) parts.push(`negative space: ${value.negative_space}`);
-        } else if (key === 'pose_and_framing') {
-          // ポーズとフレーミング
-          const poseParts = [];
-          if (value.shot) poseParts.push(`shot: ${value.shot}`);
-          if (value.angle) poseParts.push(`angle: ${value.angle}`);
-          if (value.posture) poseParts.push(`posture: ${value.posture}`);
-          if (value.hands) poseParts.push(`hands: ${value.hands}`);
-          if (value.contrast) poseParts.push(`contrast: ${value.contrast}`);
-          if (poseParts.length > 0) {
-            parts.push(poseParts.join(', '));
-          }
-        } else if (key === 'lighting_mood') {
-          // ライティングとムード
-          const lightingParts = [];
-          if (value.type) lightingParts.push(`lighting: ${value.type}`);
-          if (value.rim_light) lightingParts.push(`rim light: ${value.rim_light}`);
-          if (value.atmosphere) lightingParts.push(`atmosphere: ${value.atmosphere}`);
-          if (lightingParts.length > 0) {
-            parts.push(lightingParts.join(', '));
-          }
-        } else if (key === 'background') {
-          // 背景
-          if (value.type) parts.push(`background type: ${value.type}`);
-          if (value.color) parts.push(`background color: ${value.color}`);
-          if (value.description) parts.push(`background: ${value.description}`);
-          if (value.strokes) parts.push(`background strokes: ${value.strokes}`);
-          if (value.layout) parts.push(`background layout: ${value.layout}`);
-        } else if (key === 'style') {
-          // スタイル
-          if (value.description) {
-            parts.push(value.description);
-          }
-          if (value.type) {
-            parts.push(`style type: ${value.type}`);
-          }
-          if (value.aesthetic) {
-            parts.push(`aesthetic: ${value.aesthetic}`);
-          }
-          if (value.technique && Array.isArray(value.technique)) {
-            parts.push(`technique: ${value.technique.join(', ')}`);
-          }
-        } else if (key === 'subject') {
-          // 被写体
-          if (value.description) {
-            parts.push(value.description);
-          }
-          if (value.age) parts.push(`age: ${value.age}`);
-          if (value.gender) parts.push(`gender: ${value.gender}`);
-        } else if (key === 'mood') {
-          // ムード
-          if (value.description) {
-            parts.push(`mood: ${value.description}`);
-          }
-        } else if (key === 'typography') {
-          // タイポグラフィ
-          if (value.text) parts.push(`text: ${value.text}`);
-          if (value.font_style) parts.push(`font style: ${value.font_style}`);
-        } else {
-          // その他のキーは再帰的に処理
-          if (typeof value === 'string' && value.trim()) {
-            parts.push(`${key}: ${value.trim()}`);
-          } else if (typeof value === 'object') {
-            traverse(value, prefix ? `${prefix}.${key}` : key);
-          }
-        }
-      }
-    };
-
-    traverse(yaml);
-    
-    // 重複を除去し、空の要素をフィルタリング
-    const uniqueParts = [...new Set(parts.filter(p => p && p.trim()))];
-    
-    return uniqueParts.join(', ');
-  };
-
-  // テンプレートを保存
-  const handleSaveTemplate = () => {
-    if (!templateName.trim()) {
-      alert('テンプレート名を入力してください');
-      return;
-    }
-
-    const newTemplate = {
-      // UUID型のIDを生成（テーブルのidカラムがUUID型のため）
-      id: generateUUID(),
-      name: templateName,
-      yaml: yamlData,
-      originalPrompt: masterPrompt,
-      fieldOptions: fieldOptions, // 選択肢も一緒に保存
-      createdAt: new Date().toISOString(),
-    };
-
-    setTemplates(prev => [...prev, newTemplate]);
-    persistTemplate(newTemplate);
-    setTemplateName('');
-    alert('テンプレートを保存しました');
-  };
-
-  // F-05: スタイルライブラリに追加
-  const handleAddToStyleLibrary = () => {
-    if (!yamlData) {
-      alert('YAMLデータがありません');
-      return;
-    }
-
-    const styleName = window.prompt('スタイル名を入力してください:', templateName || 'プロンプト ' + new Date().toLocaleString('ja-JP'));
-    if (!styleName || !styleName.trim()) {
-      return;
-    }
-
-    // YAMLデータをそのまま保存（JSON文字列としてpromptフィールドに保存）
-    const newStyle = {
-      id: generateUUID(),
-      name: styleName.trim(),
-      prompt: JSON.stringify(yamlData), // YAMLデータをJSON文字列として保存
-      yaml: yamlData, // ローカル状態用にYAMLオブジェクトも保持
-      thumbnail: null,
-      source: 'prompt-mode',
-      createdAt: new Date().toISOString()
-    };
-
-    onStyleCreated(newStyle);
-    alert('スタイルライブラリに追加しました！');
-  };
-
-  // テンプレートを読み込み
-  const handleLoadTemplate = (template) => {
-    setCurrentTemplate(template);
-    setYamlData(template.yaml);
-    setMasterPrompt(template.originalPrompt);
-    // 保存された選択肢があれば読み込む
-    if (template.fieldOptions) {
-      setFieldOptions(template.fieldOptions);
-    }
-    const fields = getYamlFields(template.yaml);
-    if (fields.length > 0) {
-      setSelectedField(fields[0]);
-      setCurrentMode('field');
-      setSelectedOptionIndex(0);
-    }
-  };
-
-  // YAMLをダウンロード
-  const handleDownloadYaml = () => {
-    const yamlContent = JSON.stringify(yamlData, null, 2);
-    const blob = new Blob([yamlContent], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `template-${templateName || 'untitled'}-${Date.now()}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // プロンプトをダウンロード
-  const handleDownloadPrompt = () => {
-    const promptContent = generatePromptFromYaml(yamlData);
-    const blob = new Blob([promptContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `prompt-${templateName || 'untitled'}-${Date.now()}.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // YAMLをクリップボードにコピー
-  const handleCopyYaml = async () => {
-    const yamlContent = JSON.stringify(yamlData, null, 2);
-    try {
-      await navigator.clipboard.writeText(yamlContent);
-      alert('YAMLをクリップボードにコピーしました');
-    } catch (err) {
-      console.error('コピーに失敗しました:', err);
-      alert('コピーに失敗しました');
-    }
-  };
-
-  // プロンプトをクリップボードにコピー
-  const handleCopyPrompt = async () => {
-    const promptContent = generatePromptFromYaml(yamlData);
-    try {
-      await navigator.clipboard.writeText(promptContent);
-      alert('プロンプトをクリップボードにコピーしました');
-    } catch (err) {
-      console.error('コピーに失敗しました:', err);
-      alert('コピーに失敗しました');
-    }
-  };
-
-  // YAML編集モードを開始
-  const handleStartEditYaml = () => {
-    setEditingYamlText(JSON.stringify(yamlData, null, 2));
-    setIsEditingYaml(true);
-  };
-
-  // YAML編集を保存
-  const handleSaveEditYaml = () => {
-    try {
-      const parsed = JSON.parse(editingYamlText);
-      setYamlData(parsed);
-      if (currentTemplate) {
-        setCurrentTemplate({ ...currentTemplate, yaml: parsed });
-      }
-      setIsEditingYaml(false);
-      // フィールドリストを更新
-      const fields = getYamlFields(parsed);
-      if (fields.length > 0) {
-        // 現在選択中のフィールドが存在するか確認
-        const currentFieldExists = fields.some(f => f.path === selectedField?.path);
-        if (!currentFieldExists && fields.length > 0) {
-          setSelectedField(fields[0]);
-        }
-      } else {
-        setSelectedField(null);
-      }
-      alert('YAMLを更新しました');
-    } catch (err) {
-      alert('YAMLの形式が正しくありません。JSON形式で入力してください。');
-      console.error('YAML解析エラー:', err);
-    }
-  };
-
-  // YAML編集をキャンセル
-  const handleCancelEditYaml = () => {
-    setIsEditingYaml(false);
-    setEditingYamlText('');
-  };
-
-  return (
-    <div className="prompt-maker">
-      <div className="prompt-maker-layout">
-        {/* 左: ライブラリ */}
-        <div className="template-library-sidebar">
-          <h2>📚 テンプレートライブラリ</h2>
-          <div className="template-list">
-            {templates.length === 0 ? (
-              <p className="empty-templates">テンプレートがありません</p>
-            ) : (
-              templates.map(template => (
-                <div
-                  key={template.id}
-                  className={`template-item ${currentTemplate?.id === template.id ? 'active' : ''}`}
-                  onClick={() => handleLoadTemplate(template)}
-                  style={{ position: 'relative', paddingRight: '30px' }}
-                >
-                  <h3>{template.name}</h3>
-                  <p className="template-date">{new Date(template.createdAt).toLocaleDateString('ja-JP')}</p>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteTemplate(template.id);
-                    }}
-                    className="delete-image-button"
-                    title="削除"
-                    style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 10 }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-          {templateError && (
-            <div className="error-message" style={{ marginTop: '8px' }}>
-              {templateError}
-            </div>
-          )}
-        </div>
-
-        {/* 中央: メインエリア */}
-        <div className="prompt-maker-main">
-          {!yamlData ? (
-            /* YAMLメーカー画面 */
-            <div className="yaml-maker-container">
-              <h1>📝 プロンプトYAMLメーカー</h1>
-              <p className="subtitle">マスタープロンプトを入力して、構造化テンプレートを生成します</p>
-              
-              <div className="master-prompt-section">
-                <label htmlFor="master-prompt">マスタープロンプト</label>
-                <textarea
-                  id="master-prompt"
-                  value={masterPrompt}
-                  onChange={(e) => setMasterPrompt(e.target.value)}
-                  placeholder="例: A beautiful sunset over the ocean, color: vibrant orange and pink, style: photorealistic, mood: peaceful, --ar 16:9"
-                  rows={8}
-                  className="master-prompt-input"
-                  disabled={isParsing}
-                />
-                <button 
-                  onClick={handleGenerateTemplate} 
-                  className="generate-template-button"
-                  disabled={isParsing || !masterPrompt.trim()}
-                >
-                  {isParsing ? '解析中...' : 'テンプレート生成'}
-                </button>
-                {isParsing && (
-                  <div className="parsing-indicator">
-                    <div className="spinner"></div>
-                    <p>OpenAI APIでプロンプトを解析しています...</p>
-                  </div>
-                )}
-                {parseError && (
-                  <div className="parse-error-message">
-                    <p>⚠️ {parseError}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            /* テンプレート設定画面 */
-            <div className="template-editor-container">
-              <div className="template-editor-header">
-                <h1>⚙️ テンプレート設定</h1>
-                <div className="template-actions">
-                  <input
-                    type="text"
-                    value={templateName}
-                    onChange={(e) => setTemplateName(e.target.value)}
-                    placeholder="テンプレート名"
-                    className="template-name-input"
-                  />
-                  <button onClick={handleSaveTemplate} className="save-template-button">
-                    保存
-                  </button>
-                  <button onClick={() => {
-                    setYamlData(null);
-                    setCurrentTemplate(null);
-                    setMasterPrompt('');
-                  }} className="new-template-button">
-                    新規作成
-                  </button>
-                </div>
-              </div>
-
-              <div className="template-editor-layout">
-                {/* 左: 設定項目リスト */}
-                <div className="template-fields-list">
-                  <h3>設定項目</h3>
-                  <p className="keyboard-hint">
-                    ↑↓ で項目選択、Shift+→ で選択肢、Shift+← で設定項目/自由入力
-                  </p>
-                  <div className="fields-list">
-                    {getYamlFields(yamlData).map((field) => (
-                      <div
-                        key={field.path}
-                        className={`field-item ${selectedField?.path === field.path ? 'selected' : ''}`}
-                        onClick={() => {
-                          setSelectedField(field);
-                          setCurrentMode('field');
-                          setSelectedOptionIndex(0);
-                        }}
-                      >
-                        <div className="field-path">{field.path}</div>
-                        <div className="field-value">{String(field.value || '')}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 中央: 編集エリア */}
-                <div className="template-editor-area">
-                  {selectedField && (
-                    <div className="field-editor">
-                      <h3>編集: {selectedField.path}</h3>
-                      {inputMode === 'select' ? (
-                        <div className="select-mode">
-                          <p>選択肢モード（→で選択肢移動、Shift+←で設定項目に戻る）</p>
-                          <div className="option-actions" style={{ marginBottom: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            <button
-                              onClick={() => generateOptionsWithAI(selectedField.path)}
-                              className="generate-options-button"
-                              disabled={isGeneratingOptions}
-                              style={{ padding: '8px 16px', fontSize: '14px' }}
-                            >
-                              {isGeneratingOptions ? '🤖 AI生成中...' : '🤖 AIで選択肢を生成'}
-                            </button>
-                            <button
-                              onClick={() => handleEditOptions(selectedField.path)}
-                              className="edit-options-button"
-                              style={{ padding: '8px 16px', fontSize: '14px' }}
-                            >
-                              ✏️ 選択肢を手動編集
-                            </button>
-                          </div>
-                          {isEditingOptions === selectedField.path ? (
-                            <div className="options-editor" style={{ marginBottom: '12px' }}>
-                              <label>選択肢を1行に1つずつ入力:</label>
-                              <textarea
-                                value={editingOptionsText}
-                                onChange={(e) => setEditingOptionsText(e.target.value)}
-                                rows={8}
-                                style={{ width: '100%', padding: '8px', marginTop: '4px', fontFamily: 'monospace', fontSize: '12px' }}
-                                placeholder="選択肢1&#10;選択肢2&#10;選択肢3&#10;..."
-                              />
-                              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                                <button
-                                  onClick={() => handleSaveOptions(selectedField.path)}
-                                  className="save-options-button"
-                                  style={{ padding: '8px 16px' }}
-                                >
-                                  保存
-                                </button>
-                                <button
-                                  onClick={handleCancelEditOptions}
-                                  className="cancel-options-button"
-                                  style={{ padding: '8px 16px' }}
-                                >
-                                  キャンセル
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="option-buttons">
-                              {getOptions(selectedField.path).map((option, index) => (
-                                <button
-                                  key={index}
-                                  onClick={() => {
-                                    updateYamlValue(selectedField.path, option);
-                                    setSelectedOptionIndex(index);
-                                  }}
-                                  className={selectedOptionIndex === index ? 'selected' : ''}
-                                >
-                                  {option}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                          <p className="option-hint">Enterキーで選択を確定</p>
-                        </div>
-                      ) : (
-                        <div className="text-mode">
-                          <p>自由入力モード（Shift+←で設定項目に戻る）</p>
-                          <input
-                            type="text"
-                            value={String(selectedField.value || '')}
-                            onChange={(e) => updateYamlValue(selectedField.path, e.target.value)}
-                            className="field-text-input"
-                            autoFocus={currentMode === 'text'}
-                          />
-                        </div>
-                      )}
-                      <div className={`mode-indicator mode-indicator-${currentMode}`}>
-                        現在のモード: {currentMode === 'field' ? '設定項目' : currentMode === 'select' ? '選択肢' : '自由入力'}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 右: プレビュー */}
-                <div className="template-preview">
-                  <h3>プレビュー</h3>
-                  <div className="yaml-preview">
-                    <div className="preview-header">
-                      <h4>YAML</h4>
-                      <div className="preview-actions">
-                        {!isEditingYaml ? (
-                          <>
-                            <button onClick={handleCopyYaml} className="copy-button" title="YAMLをコピー">
-                              📋 コピー
-                            </button>
-                            <button onClick={handleDownloadYaml} className="download-button" title="YAMLをダウンロード">
-                              💾 ダウンロード
-                            </button>
-                            <button onClick={handleStartEditYaml} className="edit-button" title="YAMLを編集">
-                              ✏️ 編集
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button onClick={handleSaveEditYaml} className="save-button" title="保存">
-                              💾 保存
-                            </button>
-                            <button onClick={handleCancelEditYaml} className="cancel-button" title="キャンセル">
-                              ✖️ キャンセル
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    {isEditingYaml ? (
-                      <textarea
-                        value={editingYamlText}
-                        onChange={(e) => setEditingYamlText(e.target.value)}
-                        className="yaml-edit-textarea"
-                        rows={20}
-                        style={{ width: '100%', fontFamily: 'monospace', fontSize: '12px' }}
-                      />
-                    ) : (
-                      <pre>{JSON.stringify(yamlData, null, 2)}</pre>
-                    )}
-                  </div>
-                  <div className="prompt-preview">
-                    <div className="preview-header">
-                      <h4>生成されたプロンプト</h4>
-                      <div className="preview-actions">
-                        <button onClick={handleCopyPrompt} className="copy-button" title="プロンプトをコピー">
-                          📋 コピー
-                        </button>
-                        <button onClick={handleDownloadPrompt} className="download-button" title="プロンプトをダウンロード">
-                          💾 ダウンロード
-                        </button>
-                        {/* F-05: スタイルライブラリに追加 */}
-                        <button 
-                          onClick={handleAddToStyleLibrary} 
-                          className="add-to-style-button" 
-                          title="スタイルライブラリに追加"
-                          style={{ marginLeft: '8px' }}
-                        >
-                          📚 スタイルに追加
-                        </button>
-                      </div>
-                    </div>
-                    <p className="generated-prompt">{generatePromptFromYaml(yamlData)}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
 
 export default ImageGenerator;
