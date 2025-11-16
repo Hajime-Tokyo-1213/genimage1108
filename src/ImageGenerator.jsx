@@ -5,9 +5,18 @@ import { useAuth } from './contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import './ImageGenerator.css';
 import { supabase, requireSession } from './lib/supabaseClient.js';
-import { persistImageHistory, removeImageHistory } from './lib/authService.js';
+import { persistImageHistory, removeImageHistory, persistImageArchive } from './lib/authService.js';
 
 const HISTORY_PAGE_SIZE = 10;
+
+// UUID v4を生成する関数（共通）
+const generateUUID = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
 
 const createDefaultStyles = () => ([
   { id: '1', name: '和風アート', prompt: '日本の伝統的な和風アートスタイル、浮世絵風、美しい色彩', thumbnail: null, source: 'manual', createdAt: new Date().toISOString() },
@@ -42,8 +51,12 @@ const ImageGenerator = () => {
   const [editingTitle, setEditingTitle] = useState(''); // 編集中のタイトル
   const [expandedStyleIds, setExpandedStyleIds] = useState(new Set()); // 展開されているスタイルID
   const [selectedStyleId, setSelectedStyleId] = useState(null); // 選択されたスタイルID
-  const [objectInputs, setObjectInputs] = useState({ person: '', background: '', other: '' }); // オブジェクト入力
-  const [yamlInput, setYamlInput] = useState(''); // YAML形式の入力
+  const [objectInputs, setObjectInputs] = useState({ person: '', background: '', other: '' }); // オブジェクト入力（後方互換性のため残す）
+  const [yamlInput, setYamlInput] = useState(''); // YAML形式の入力（後方互換性のため残す）
+  const [currentYamlData, setCurrentYamlData] = useState(null); // 現在のYAMLデータ（オブジェクト形式）
+  const [yamlJsonText, setYamlJsonText] = useState(''); // YAMLのJSONテキスト（編集用）
+  const [yamlJapaneseTranslation, setYamlJapaneseTranslation] = useState(''); // YAMLの日本語訳
+  const [isTranslatingYaml, setIsTranslatingYaml] = useState(false); // 翻訳中フラグ
   const [historyPage, setHistoryPage] = useState(0);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -63,7 +76,23 @@ const ImageGenerator = () => {
     try {
       await persistImageHistory(image, supabase);
     } catch (err) {
-      presentError('画像履歴の保存に失敗しました', err);
+      console.error('画像履歴の保存に失敗しました:', {
+        error: err,
+        message: err?.message,
+        details: err?.details,
+        hint: err?.hint,
+        code: err?.code,
+        image: {
+          id: image?.id,
+          prompt: image?.prompt?.substring(0, 50) + '...',
+          hasThumbnail: !!image?.thumbnailUrl,
+          hasFullImage: !!image?.fullImageUrl
+        }
+      });
+      const errorMessage = err?.message || err?.details || '画像履歴の保存に失敗しました';
+      presentError(`画像履歴の保存に失敗しました: ${errorMessage}`, err);
+      // エラーを再スローして、呼び出し元で処理できるようにする
+      throw err;
     }
   }, [user?.id, presentError]);
 
@@ -80,7 +109,16 @@ const ImageGenerator = () => {
     if (!user?.id) return;
     try {
       await requireSession(supabase);
-      const { error } = await supabase
+      console.log('🔍 スタイル保存リクエスト:', {
+        id: style.id,
+        user_id: user.id,
+        name: style.name,
+        prompt_length: style.prompt?.length || 0,
+        has_thumbnail: !!style.thumbnail,
+        source: style.source
+      });
+      
+      const { data, error } = await supabase
         .from('image_styles')
         .upsert({
           id: style.id,
@@ -91,11 +129,28 @@ const ImageGenerator = () => {
           source: style.source || 'manual',
           created_at: style.createdAt || new Date().toISOString(),
         }, { onConflict: 'id' });
+      
       if (error) {
+        console.error('❌ スタイル保存エラー:', {
+          error: error,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          style: {
+            id: style.id,
+            name: style.name,
+            prompt: style.prompt?.substring(0, 50) + '...'
+          }
+        });
         throw error;
       }
+      
+      console.log('✅ スタイル保存成功:', data);
     } catch (err) {
-      presentError('スタイルの保存に失敗しました', err);
+      const errorMessage = err?.message || err?.details || 'スタイルの保存に失敗しました';
+      presentError(`スタイルの保存に失敗しました: ${errorMessage}`, err);
+      throw err; // エラーを再スロー
     }
   }, [user?.id, presentError]);
 
@@ -116,6 +171,7 @@ const ImageGenerator = () => {
     }
   }, [user?.id, presentError]);
 
+
   const loadStyles = useCallback(async () => {
     if (!user?.id) {
       setStyles(createDefaultStyles());
@@ -133,20 +189,40 @@ const ImageGenerator = () => {
         throw error;
       }
       if (Array.isArray(data) && data.length > 0) {
-        setStyles(data.map(row => ({
-          id: row.id,
-          name: row.name,
-          prompt: row.prompt,
-          thumbnail: row.thumbnail || null,
-          source: row.source || 'manual',
-          createdAt: row.created_at,
-        })));
+        setStyles(data.map(row => {
+          // promptフィールドがJSON文字列の場合はYAMLオブジェクトとして復元
+          let yaml = null;
+          let prompt = row.prompt;
+          try {
+            const parsed = JSON.parse(row.prompt);
+            if (typeof parsed === 'object' && parsed !== null) {
+              yaml = parsed;
+              // YAMLデータの場合は、promptフィールドにJSON文字列をそのまま保持
+              // プロンプト文字列が必要な場合は、使用時に生成する
+            }
+          } catch (e) {
+            // JSON解析に失敗した場合は通常のプロンプト文字列として扱う
+          }
+          
+          return {
+            id: row.id,
+            name: row.name,
+            prompt: prompt, // JSON文字列または通常のプロンプト文字列
+            yaml: yaml, // YAMLデータがあれば保持（オブジェクト形式）
+            thumbnail: row.thumbnail || null,
+            source: row.source || 'manual',
+            createdAt: row.created_at,
+          };
+        }));
       } else {
         setStyles(createDefaultStyles());
       }
     } catch (err) {
+      // エラーが発生した場合は無限ループを防ぐため、エラーを表示するだけ
+      console.error('スタイルの読み込みエラー:', err);
       presentError('スタイルの読み込みに失敗しました', err);
       setStyles(createDefaultStyles());
+      // エラー時はリトライしない
     }
   }, [user?.id, presentError]);
 
@@ -159,8 +235,9 @@ const ImageGenerator = () => {
     setHistoryLoading(true);
     try {
       await requireSession(supabase);
-      const page = reset ? 0 : historyPage;
-      const from = page * HISTORY_PAGE_SIZE;
+      // resetの場合は常に0から開始、そうでない場合は現在のhistoryPageを使用
+      const currentPage = reset ? 0 : historyPage;
+      const from = currentPage * HISTORY_PAGE_SIZE;
       const to = from + HISTORY_PAGE_SIZE - 1;
       const { data, error } = await supabase
         .from('image_histories')
@@ -176,6 +253,8 @@ const ImageGenerator = () => {
             id: row.id,
             prompt: row.prompt,
             thumbnailUrl: row.thumbnail_url,
+            // フルサイズ画像も復元（full_image_urlカラムが存在する場合）
+            fullImageUrl: row.full_image_url || null,
             createdAt: row.created_at,
             revision: row.revision || 0,
             title: row.title || '',
@@ -191,10 +270,18 @@ const ImageGenerator = () => {
         });
         return next.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       });
-      setHistoryPage(page + 1);
+      // resetの場合は1に設定、そうでない場合は次のページに進む
+      if (reset) {
+        setHistoryPage(1);
+      } else {
+        setHistoryPage(prev => prev + 1);
+      }
       setHasMoreHistory(normalized.length === HISTORY_PAGE_SIZE);
     } catch (err) {
+      // エラーが発生した場合は無限ループを防ぐため、エラーを表示するだけ
+      console.error('履歴の読み込みエラー:', err);
       presentError('履歴の読み込みに失敗しました', err);
+      // エラー時はリトライしない
     } finally {
       setHistoryLoading(false);
     }
@@ -208,11 +295,25 @@ const ImageGenerator = () => {
       setHasMoreHistory(false);
       return;
     }
-    setHistoryPage(0);
-    setHasMoreHistory(false);
-    loadStyles();
-    loadHistories({ reset: true });
-  }, [user?.id, loadStyles, loadHistories]);
+    // 無限ループを防ぐため、依存配列から関数を削除し、直接呼び出す
+    let isMounted = true;
+    
+    const fetchData = async () => {
+      setHistoryPage(0);
+      setHasMoreHistory(false);
+      if (isMounted) {
+        await loadStyles();
+        await loadHistories({ reset: true });
+      }
+    };
+    
+    fetchData();
+    
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]); // loadStylesとloadHistoriesを依存配列から削除
 
   // 画像をBase64に変換
   const imageToBase64 = useCallback((file) => {
@@ -443,7 +544,7 @@ const ImageGenerator = () => {
       console.log('画像データ取得成功:', { base64Length: base64.length, mime });
 
       const imageDataUrl = `data:${mime};base64,${base64}`;
-      const imageId = regenerateId || Date.now().toString();
+      const imageId = regenerateId || generateUUID();
       const revision = regenerateId && Array.isArray(images)
         ? ((images.find(img => img && img.id === regenerateId)?.revision || 0) + 1)
         : 0;
@@ -505,7 +606,23 @@ const ImageGenerator = () => {
         setCurrentImageId(newImage.id);
         setShowRegenerateForm(false);
         console.log('画像生成成功:', { imageId: newImage.id, revision: newImage.revision });
-        await syncImageRecord(newImage);
+        
+        // 画像履歴の保存を試みる（エラーが発生しても処理は続行）
+        try {
+          await syncImageRecord(newImage);
+        } catch (syncErr) {
+          // 画像履歴の保存に失敗しても、画像生成自体は成功しているので警告のみ
+          console.warn('画像履歴の保存に失敗しました（画像は正常に生成されています）:', syncErr);
+          // エラーメッセージは既に presentError で表示されているので、ここではログのみ
+        }
+        
+        // 削除されないアーカイブに保存（エラーが発生しても処理は続行）
+        try {
+          await persistImageArchive(newImage, supabase);
+        } catch (archiveErr) {
+          // アーカイブの保存に失敗しても、画像生成自体は成功しているので警告のみ
+          console.warn('画像アーカイブの保存に失敗しました（画像は正常に生成されています）:', archiveErr);
+        }
       } catch (stateErr) {
         console.error('状態更新エラー:', stateErr);
         throw new Error(`画像の保存に失敗しました: ${stateErr.message}`);
@@ -513,6 +630,8 @@ const ImageGenerator = () => {
     } catch (err) {
       const errorMessage = err.message || 'エラーが発生しました';
       presentError(errorMessage, err);
+    } finally {
+      // エラーが発生しても必ずローディング状態を解除
       setLoading(false);
     }
   };
@@ -633,12 +752,117 @@ const ImageGenerator = () => {
     }
   };
 
-  // v5: スタイルをプロンプトに適用
+  // v5: スタイルをプロンプトに適用（旧実装、後方互換性のため残す）
   const handleStyleClick = (stylePrompt) => {
     if (prompt.trim()) {
       setPrompt(`${prompt}, ${stylePrompt}`);
     } else {
       setPrompt(stylePrompt);
+    }
+  };
+
+  // YAMLを日本語に翻訳する関数
+  const translateYamlToJapanese = async (yamlData) => {
+    if (!yamlData || typeof yamlData !== 'object') {
+      return '';
+    }
+
+    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+    if (!apiKey) {
+      // APIキーがない場合は、簡易的な翻訳を返す
+      return JSON.stringify(yamlData, null, 2);
+    }
+
+    setIsTranslatingYaml(true);
+    try {
+      const model = import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini';
+      
+      const systemPrompt = `あなたは画像生成プロンプトのYAMLデータを日本語に翻訳する専門家です。
+YAMLデータの構造を保持しながら、すべての英語のテキストを自然な日本語に翻訳してください。
+
+**翻訳の原則:**
+1. YAMLのキー名（例: "subject", "background", "style"）は日本語に翻訳してください
+2. 値の内容も日本語に翻訳してください
+3. 技術的なパラメータ（例: "--ar 3:4", "--style raw"）はそのまま保持してください
+4. 色コード（例: "#1F242A"）や数値はそのまま保持してください
+5. JSON形式で返してください（YAML形式ではなく）
+
+**出力形式:**
+翻訳されたYAMLデータをJSON形式で返してください。説明文やコメントは不要です。`;
+
+      const userPrompt = `以下のYAMLデータを日本語に翻訳してください:\n${JSON.stringify(yamlData, null, 2)}`;
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: 0.3,
+          response_format: { type: 'json_object' }
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`翻訳API呼び出しに失敗しました (${response.status})`);
+      }
+
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content;
+      
+      if (!content) {
+        throw new Error('翻訳APIからの応答が空です');
+      }
+
+      const translated = JSON.parse(content);
+      return JSON.stringify(translated, null, 2);
+    } catch (err) {
+      console.error('YAML翻訳エラー:', err);
+      // エラー時は元のYAMLを返す
+      return JSON.stringify(yamlData, null, 2);
+    } finally {
+      setIsTranslatingYaml(false);
+    }
+  };
+
+  // スタイルをYAMLとして適用
+  const handleApplyStyleAsYaml = async (style) => {
+    let yamlData = null;
+    
+    // スタイルにYAMLデータがある場合はそれを使用
+    if (style.yaml) {
+      yamlData = style.yaml;
+    } else if (style.prompt) {
+      // promptフィールドがJSON文字列の場合はパース
+      try {
+        const parsed = JSON.parse(style.prompt);
+        if (typeof parsed === 'object' && parsed !== null) {
+          yamlData = parsed;
+        } else {
+          // 通常のプロンプト文字列の場合は、空のYAMLを作成
+          yamlData = { prompt: style.prompt };
+        }
+      } catch (e) {
+        // JSON解析に失敗した場合は、通常のプロンプト文字列として扱う
+        yamlData = { prompt: style.prompt };
+      }
+    }
+
+    if (yamlData) {
+      setCurrentYamlData(yamlData);
+      setYamlJsonText(JSON.stringify(yamlData, null, 2));
+      setSelectedStyleId(style.id);
+      
+      // 日本語翻訳を非同期で実行
+      translateYamlToJapanese(yamlData).then(translation => {
+        setYamlJapaneseTranslation(translation);
+      });
     }
   };
 
@@ -657,33 +881,19 @@ const ImageGenerator = () => {
 
   // F-07: 最終プロンプト構築
   const buildFinalPrompt = () => {
-    // YAML形式の入力がある場合はそれを優先
+    // 現在のYAMLデータからプロンプトを生成
+    if (currentYamlData) {
+      // PromptMakerコンポーネント内のgeneratePromptFromYaml関数と同じロジックを使用
+      // ただし、ここでは簡易版を使用
+      return generatePromptFromYaml(currentYamlData);
+    }
+    
+    // 後方互換性のため、旧形式もサポート
     if (yamlInput.trim()) {
       try {
         const yamlObj = JSON.parse(yamlInput);
-        const parts = [];
-        
-        // YAMLからプロンプトを構築
-        if (yamlObj.style) {
-          if (typeof yamlObj.style === 'string') {
-            parts.push(yamlObj.style);
-          } else if (yamlObj.style.type) {
-            parts.push(`style: ${yamlObj.style.type}`);
-          }
-        }
-        if (yamlObj.person) {
-          parts.push(yamlObj.person);
-        }
-        if (yamlObj.background) {
-          parts.push(yamlObj.background);
-        }
-        if (yamlObj.other) {
-          parts.push(yamlObj.other);
-        }
-        
-        return parts.join(', ');
+        return generatePromptFromYaml(yamlObj);
       } catch (e) {
-        // YAML解析に失敗した場合は、そのままテキストとして使用
         return yamlInput;
       }
     }
@@ -710,9 +920,81 @@ const ImageGenerator = () => {
     return parts.join(', ');
   };
 
-  // F-07: オブジェクト入力モードでの画像生成
+  // YAMLからプロンプトを生成（ImageGeneratorコンポーネント用の簡易版）
+  const generatePromptFromYaml = (yaml) => {
+    if (!yaml || typeof yaml !== 'object') {
+      return '';
+    }
+
+    const parts = [];
+    
+    // 再帰的にオブジェクトを走査してプロンプトを構築
+    const traverse = (obj, prefix = '') => {
+      if (obj === null || obj === undefined) {
+        return;
+      }
+
+      if (Array.isArray(obj)) {
+        obj.forEach((item) => {
+          if (typeof item === 'string' && item.trim()) {
+            parts.push(item.trim());
+          } else if (typeof item === 'object' && item !== null) {
+            traverse(item, prefix);
+          }
+        });
+        return;
+      }
+
+      if (typeof obj !== 'object') {
+        if (typeof obj === 'string' && obj.trim()) {
+          parts.push(obj.trim());
+        } else if (typeof obj === 'number' || typeof obj === 'boolean') {
+          parts.push(String(obj));
+        }
+        return;
+      }
+
+      for (const [key, value] of Object.entries(obj)) {
+        if (value === null || value === undefined || value === '') {
+          continue;
+        }
+
+        if (key === 'format') {
+          if (value.aspectRatio) parts.push(`--ar ${value.aspectRatio}`);
+          if (value.style) parts.push(`--style ${value.style}`);
+          if (value.quality) parts.push(`--quality ${value.quality}`);
+          if (value.stylize) parts.push(`--stylize ${value.stylize}`);
+        } else if (key === 'subject' && value.description) {
+          parts.push(value.description);
+        } else if (key === 'background' && value.description) {
+          parts.push(`background: ${value.description}`);
+        } else if (key === 'style' && value.description) {
+          parts.push(value.description);
+        } else if (key === 'mood' && value.description) {
+          parts.push(`mood: ${value.description}`);
+        } else if (typeof value === 'string' && value.trim()) {
+          parts.push(value.trim());
+        } else if (typeof value === 'object') {
+          traverse(value, prefix ? `${prefix}.${key}` : key);
+        }
+      }
+    };
+
+    traverse(yaml);
+    
+    const uniqueParts = [...new Set(parts.filter(p => p && p.trim()))];
+    return uniqueParts.join(', ');
+  };
+
+  // F-07: オブジェクト入力モードでの画像生成（YAMLデータを使用）
   const handleSubmitWithObjects = (e) => {
     e.preventDefault();
+    
+    // 現在のYAMLデータからプロンプトを生成
+    if (!currentYamlData) {
+      alert('YAMLデータがありません。スタイルライブラリからスタイルを適用してください。');
+      return;
+    }
     const finalPrompt = buildFinalPrompt();
     if (!finalPrompt.trim()) {
       setError('YAML形式でスタイル・人物・背景を入力するか、プロンプトを直接入力してください');
@@ -759,7 +1041,7 @@ const ImageGenerator = () => {
       if (!stylePrompt || !stylePrompt.trim()) return;
 
       targetStyle = {
-        id: Date.now().toString(),
+        id: generateUUID(),
         name: styleName.trim(),
         prompt: stylePrompt.trim(),
         thumbnail: null,
@@ -794,7 +1076,9 @@ const ImageGenerator = () => {
           ));
         }
 
-        syncStyleRecord(updatedStyle);
+        syncStyleRecord(updatedStyle).catch(err => {
+          console.warn('スタイルの保存に失敗しました（サムネイルは設定されています）:', err);
+        });
 
         alert('スタイルのサムネイルを設定しました！');
       })
@@ -812,7 +1096,7 @@ const ImageGenerator = () => {
     }
 
     const newStyle = {
-      id: Date.now().toString(),
+      id: generateUUID(),
       name: newStyleName,
       prompt: newStylePrompt,
       thumbnail: null,
@@ -821,7 +1105,9 @@ const ImageGenerator = () => {
     };
 
     setStyles(prev => [...prev, newStyle]);
-    syncStyleRecord(newStyle);
+    syncStyleRecord(newStyle).catch(err => {
+      console.warn('スタイルの保存に失敗しました（スタイルは追加されています）:', err);
+    });
     setNewStyleName('');
     setNewStylePrompt('');
     setShowAddStyleForm(false);
@@ -866,7 +1152,9 @@ const ImageGenerator = () => {
     setEditStyleName('');
     setEditStylePrompt('');
     if (updatedStyle) {
-      syncStyleRecord(updatedStyle);
+      syncStyleRecord(updatedStyle).catch(err => {
+        console.warn('スタイルの保存に失敗しました（スタイルは更新されています）:', err);
+      });
     }
   };
 
@@ -877,9 +1165,25 @@ const ImageGenerator = () => {
     setEditStylePrompt('');
   };
 
-  const handleStyleCreatedFromPrompt = useCallback((style) => {
-    setStyles(prev => [...prev, style]);
-    syncStyleRecord(style);
+  const handleStyleCreatedFromPrompt = useCallback(async (style) => {
+    // まずローカル状態に追加（即座に反映）
+    setStyles(prev => {
+      // 重複チェック（同じIDが既に存在する場合はスキップ）
+      if (prev.find(s => s.id === style.id)) {
+        console.warn('スタイルは既に存在します:', style.id);
+        return prev;
+      }
+      return [...prev, style];
+    });
+    
+    // データベースに保存を試みる
+    try {
+      await syncStyleRecord(style);
+      console.log('✅ スタイルライブラリに追加・保存成功:', style.name);
+    } catch (err) {
+      console.warn('⚠️ スタイルの保存に失敗しました（スタイルは追加されています）:', err);
+      // エラーが発生しても、ローカル状態には追加されているので、ユーザーには通知しない
+    }
   }, [syncStyleRecord]);
 
   // 画像を削除
@@ -945,8 +1249,108 @@ const ImageGenerator = () => {
     }
   };
 
+  // CSVファイルとしてダウンロードする関数
+  const saveToCSV = async (image) => {
+    try {
+      // 使用したスタイル名を取得
+      let styleName = '';
+      if (selectedStyleId) {
+        const style = styles.find(s => s.id === selectedStyleId);
+        if (style) {
+          styleName = style.name;
+        }
+      }
+
+      // CSVデータを準備
+      const registeredAt = new Date().toISOString();
+      const createdAt = image.createdAt || new Date().toISOString();
+      const title = image.title || '';
+      const prompt = image.prompt || '';
+      
+      // 軽量化した画像データを取得（サムネイルを使用）
+      let thumbnailBase64 = '';
+      try {
+        const imageUrl = image.thumbnailUrl || image.imageUrl || image.fullImageUrl;
+        if (imageUrl) {
+          // data:image/png;base64, の形式からBase64部分を抽出
+          if (imageUrl.includes('base64,')) {
+            thumbnailBase64 = imageUrl.split('base64,')[1];
+          } else if (imageUrl.startsWith('data:')) {
+            // data:image/png;base64, の形式でない場合は、そのまま使用
+            thumbnailBase64 = imageUrl;
+          } else {
+            // URLの場合は、画像を読み込んでBase64に変換
+            try {
+              const response = await fetch(imageUrl);
+              const blob = await response.blob();
+              const reader = new FileReader();
+              thumbnailBase64 = await new Promise((resolve, reject) => {
+                reader.onloadend = () => {
+                  const base64String = reader.result;
+                  // data:image/png;base64, の形式からBase64部分を抽出
+                  if (base64String.includes('base64,')) {
+                    resolve(base64String.split('base64,')[1]);
+                  } else {
+                    resolve(base64String);
+                  }
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+            } catch (fetchErr) {
+              console.warn('画像の読み込みに失敗しました。画像データなしでCSVを生成します:', fetchErr);
+            }
+          }
+        }
+      } catch (imgErr) {
+        console.warn('画像データの処理に失敗しました。画像データなしでCSVを生成します:', imgErr);
+      }
+      
+      // CSVヘッダー（画像データを含む）
+      const csvHeader = '登録日時,作成日時,タイトル,スタイル名,プロンプト,画像データ(Base64)\n';
+      
+      // CSVデータ行（値にカンマや改行が含まれる場合はダブルクォートで囲む）
+      const escapeCSV = (value) => {
+        if (value === null || value === undefined) return '';
+        const str = String(value);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+          return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+      };
+      
+      const csvRow = [
+        escapeCSV(registeredAt),
+        escapeCSV(createdAt),
+        escapeCSV(title),
+        escapeCSV(styleName),
+        escapeCSV(prompt),
+        escapeCSV(thumbnailBase64)
+      ].join(',') + '\n';
+      
+      const csvContent = csvHeader + csvRow;
+      
+      // BOMを追加してExcelで正しく開けるようにする
+      const BOM = '\uFEFF';
+      const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `image-history-${image.id}-${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      
+      console.log('✅ CSVファイルをダウンロードしました（画像データ含む）');
+      return true;
+    } catch (err) {
+      console.error('❌ CSV保存エラー:', err);
+      return false;
+    }
+  };
+
+
   // F-01: ダウンロード処理（フルサイズ画像を保存）
-  const handleDownloadImage = (imageId) => {
+  const handleDownloadImage = async (imageId) => {
     const image = images.find(img => img && img.id === imageId);
     if (!image) return;
 
@@ -1039,6 +1443,7 @@ const ImageGenerator = () => {
             <button
               onClick={() => setShowAddStyleForm(!showAddStyleForm)}
               className="add-style-button"
+              style={{ marginTop: '0.5rem' }}
             >
               {showAddStyleForm ? 'キャンセル' : '+ 追加'}
             </button>
@@ -1162,8 +1567,7 @@ const ImageGenerator = () => {
                         </p>
                         <button
                           onClick={() => {
-                            setSelectedStyleId(style.id);
-                            handleStyleClick(style.prompt);
+                            handleApplyStyleAsYaml(style);
                           }}
                           className="apply-style-button"
                         >
@@ -1240,66 +1644,101 @@ const ImageGenerator = () => {
               )}
             </div>
 
-            {/* F-07: オブジェクト入力機能（YAML形式） */}
-            <div className="prompt-builder">
-              <div className="yaml-input-section" style={{ marginBottom: '16px' }}>
-                <label htmlFor="yaml-input">スタイル・人物・背景（YAML形式）</label>
+            {/* YAML編集セクション */}
+            <div className="yaml-editor-section">
+              <div className="yaml-input-wrapper" style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label htmlFor="yaml-json-input" style={{ fontWeight: 'bold' }}>YAML</label>
+                  <span style={{ fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
+                    yamlの入力は日本語でも可
+                  </span>
+                </div>
                 <textarea
-                  id="yaml-input"
-                  value={yamlInput}
-                  onChange={(e) => setYamlInput(e.target.value)}
+                  id="yaml-json-input"
+                  value={yamlJsonText}
+                  onChange={(e) => {
+                    setYamlJsonText(e.target.value);
+                    try {
+                      const parsed = JSON.parse(e.target.value);
+                      setCurrentYamlData(parsed);
+                      // 日本語翻訳を更新（デバウンス処理）
+                      clearTimeout(window.yamlTranslationTimeout);
+                      window.yamlTranslationTimeout = setTimeout(() => {
+                        translateYamlToJapanese(parsed).then(translation => {
+                          setYamlJapaneseTranslation(translation);
+                        });
+                      }, 1000); // 1秒後に翻訳
+                    } catch (err) {
+                      // JSON解析エラーは無視（編集中のため）
+                    }
+                  }}
                   placeholder={`例:
 {
-  "style": "photorealistic, vibrant colors",
-  "person": "若い女性、長い髪、笑顔",
-  "background": "夕日の海辺、雲一つない空",
-  "other": "カメラアングル: 正面、構図: 中央"
+  "subject": {
+    "description": "adult Japanese woman holding a bouquet of flowers",
+    "age": "成人",
+    "gender": "女性"
+  },
+  "background": {
+    "color": "plain white or very pale wash",
+    "description": "2-3 broad abstract strokes"
+  },
+  "style": {
+    "type": "watercolor",
+    "aesthetic": "Japanese watercolor illustration"
+  }
 }`}
-                  rows={12}
+                  rows={15}
                   style={{ 
                     width: '100%', 
-                    padding: '8px', 
+                    padding: '12px', 
                     marginTop: '4px',
                     fontFamily: 'monospace',
-                    fontSize: '12px',
-                    lineHeight: '1.5'
+                    fontSize: '13px',
+                    lineHeight: '1.6',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    resize: 'vertical'
                   }}
                   disabled={loading}
                 />
-                <p style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                  JSON形式で入力してください。style, person, background, other のフィールドが使用できます。
-                </p>
               </div>
 
-              <div className="prompt-preview" style={{ marginBottom: '16px' }}>
-                <label htmlFor="prompt-preview">生成プロンプト</label>
-                <textarea
-                  id="prompt-preview"
-                  value={buildFinalPrompt()}
-                  readOnly
-                  rows={3}
-                  style={{ width: '100%', padding: '8px', marginTop: '4px', backgroundColor: '#f5f5f5' }}
-                />
+              {/* 日本語訳セクション */}
+              <div className="yaml-translation-section" style={{ marginBottom: '16px' }}>
+                <label htmlFor="yaml-japanese-translation" style={{ fontWeight: 'bold' }}>YAML（日本語訳）</label>
+                {isTranslatingYaml ? (
+                  <div style={{ padding: '12px', textAlign: 'center', color: '#666' }}>
+                    翻訳中...
+                  </div>
+                ) : (
+                  <textarea
+                    id="yaml-japanese-translation"
+                    value={yamlJapaneseTranslation}
+                    readOnly
+                    rows={15}
+                    style={{ 
+                      width: '100%', 
+                      padding: '12px', 
+                      marginTop: '4px',
+                      fontFamily: 'monospace',
+                      fontSize: '13px',
+                      lineHeight: '1.6',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px',
+                      backgroundColor: '#f9f9f9',
+                      resize: 'vertical'
+                    }}
+                  />
+                )}
               </div>
             </div>
 
             <form onSubmit={handleSubmitWithObjects} className="prompt-form">
-              <div className="form-group">
-                <label htmlFor="prompt">プロンプトを直接入力（オプション）</label>
-                <textarea
-                  id="prompt"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="例: 美しい夕日の風景、猫が座っている様子、未来の都市..."
-                  rows={4}
-                  disabled={loading}
-                />
-              </div>
-
               <button
                 type="submit"
                 className="generate-button"
-                disabled={loading || (!buildFinalPrompt().trim() && !prompt.trim())}
+                disabled={loading || !currentYamlData}
               >
                 {loading ? '生成中...' : '画像を生成'}
               </button>
@@ -1336,6 +1775,14 @@ const ImageGenerator = () => {
                     className="download-button"
                   >
                     💾 画像をダウンロード
+                  </button>
+                  <button
+                    onClick={() => saveToCSV(currentImage)}
+                    className="download-button"
+                    style={{ marginLeft: '8px' }}
+                    title="画像情報をCSVファイルとしてダウンロード"
+                  >
+                    📄 CSVで保存
                   </button>
                   {/* v2: 再生成ボタン */}
                   <button
@@ -1395,6 +1842,7 @@ const ImageGenerator = () => {
               </button>
             )}
           </div>
+
           <div className="image-history">
             {images.length === 0 ? (
               <p className="empty-history">まだ画像が生成されていません</p>
@@ -1514,19 +1962,6 @@ const ImageGenerator = () => {
                     >
                       💾
                     </button>
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setCurrentImageId(img.id);
-                      }}
-                      className="view-button"
-                      style={{ fontSize: '11px', padding: '4px 8px', cursor: 'pointer', zIndex: 10 }}
-                      title="表示"
-                      type="button"
-                    >
-                      👁️
-                    </button>
                     {/* F-06: スタイルのサムネとして使用 */}
                     <button
                       onClick={(e) => {
@@ -1556,6 +1991,34 @@ const ImageGenerator = () => {
                 {historyLoading ? '読み込み中...' : 'さらに読み込む'}
               </button>
             )}
+            
+            {/* 画像履歴アーカイブへのリンク */}
+            <div style={{ marginTop: '1.5rem', padding: '1rem', background: '#f0f4ff', borderRadius: '8px', border: '1px solid #667eea' }}>
+              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#333' }}>
+                <strong>📋 画像生成履歴アーカイブ</strong>
+              </p>
+              <p style={{ margin: '0 0 1rem 0', fontSize: '0.85rem', color: '#666', lineHeight: '1.5' }}>
+                生成した画像とプロンプト、作成日時を表形式で確認できます。画像を削除しても、このアーカイブには残ります。
+              </p>
+              <button
+                onClick={() => navigate('/image-history')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  background: '#667eea',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  fontWeight: 'bold',
+                  transition: 'background 0.2s'
+                }}
+                onMouseOver={(e) => e.target.style.background = '#5568d3'}
+                onMouseOut={(e) => e.target.style.background = '#667eea'}
+              >
+                📋 履歴アーカイブを開く
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1645,13 +2108,16 @@ const ImageGenerator = () => {
                 </button>
                 <button 
                   onClick={() => {
-                    setCurrentImageId(quickLookImage.id);
-                    setQuickLookImage(null);
+                    const image = images.find(img => img && img.id === quickLookImage.id);
+                    if (image) {
+                      saveToCSV(image);
+                    }
                   }}
-                  className="view-button"
+                  className="download-button"
                   style={{ padding: '8px 16px' }}
+                  title="画像情報をCSVファイルとしてダウンロード"
                 >
-                  👁️ 詳細表示
+                  📄 CSVで保存
                 </button>
                 <button 
                   onClick={() => {
@@ -1714,25 +2180,82 @@ const PromptMaker = ({ onStyleCreated = () => {} }) => {
     if (!user?.id) return;
     try {
       await requireSession(supabase);
-      const { error } = await supabase
+      const payload = {
+        id: template.id,
+        user_id: user.id,
+        name: template.name,
+        yaml: template.yaml || {},
+        original_prompt: template.originalPrompt || '',
+        field_options: template.fieldOptions || {},
+        created_at: template.createdAt || new Date().toISOString(),
+      };
+      
+      console.log('🔍 テンプレート保存リクエスト:', payload);
+      
+      const { data, error } = await supabase
         .from('prompt_templates')
-        .upsert({
-          id: template.id,
-          user_id: user.id,
-          name: template.name,
-          yaml: template.yaml || {},
-          original_prompt: template.originalPrompt || '',
-          field_options: template.fieldOptions || {},
-          created_at: template.createdAt || new Date().toISOString(),
-        }, { onConflict: 'id' });
+        .upsert(payload, { onConflict: 'id' });
+      
       if (error) {
+        console.error('❌ テンプレート保存エラー詳細:', {
+          error,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
         throw error;
       }
+      
+      console.log('✅ テンプレート保存成功:', data);
       setTemplateError(null);
     } catch (err) {
-      surfaceTemplateError('テンプレートの保存に失敗しました', err);
+      console.error('テンプレート保存エラー:', err);
+      const errorMessage = err?.message || err?.details || 'テンプレートの保存に失敗しました';
+      surfaceTemplateError(`テンプレートの保存に失敗しました: ${errorMessage}`, err);
     }
   }, [user?.id, surfaceTemplateError]);
+
+  const deleteTemplate = useCallback(async (templateId) => {
+    if (!user?.id) return;
+    if (!window.confirm('このテンプレートを削除しますか？')) return;
+    
+    try {
+      await requireSession(supabase);
+      const { error } = await supabase
+        .from('prompt_templates')
+        .delete()
+        .eq('id', templateId)
+        .eq('user_id', user.id);
+      
+      if (error) {
+        console.error('❌ テンプレート削除エラー:', {
+          error: error,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
+      
+      // ローカル状態からも削除
+      setTemplates(prev => prev.filter(t => t.id !== templateId));
+      
+      // 現在のテンプレートが削除された場合はクリア
+      if (currentTemplate?.id === templateId) {
+        setCurrentTemplate(null);
+        setYamlData(null);
+        setMasterPrompt('');
+        setFieldOptions({});
+      }
+      
+      console.log('✅ テンプレート削除成功');
+    } catch (err) {
+      const errorMessage = err?.message || err?.details || 'テンプレートの削除に失敗しました';
+      surfaceTemplateError(`テンプレートの削除に失敗しました: ${errorMessage}`, err);
+    }
+  }, [user?.id, currentTemplate, surfaceTemplateError]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -2078,44 +2601,176 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
       throw new Error('OpenAI APIキーが設定されていません。.env に VITE_OPENAI_API_KEY=... を設定してください。');
     }
 
-    const systemPrompt = `あなたは画像生成プロンプトを構造化YAMLに変換する専門家です。
-入力されたプロンプトを分析し、以下の構造でJSON形式で返してください。
+    // より強力なモデルを使用（環境変数で切り替え可能）
+    const model = import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini';
 
-構造:
-{
-  "format": {
-    "aspectRatio": "16:9" (または "1:1", "3:4", "4:3", "9:16" など、プロンプトから抽出),
-    "style": "raw" (または "photorealistic", "anime" など、--styleパラメータから抽出)
-  },
-  "background": {
-    "color": "色の説明",
-    "description": "背景の説明"
-  },
-  "subject": {
-    "description": "被写体の説明",
-    "gender": "男性/女性/その他",
-    "age": "年齢の説明"
-  },
-  "style": {
-    "type": "スタイルの種類（photorealistic, anime, watercolor など）",
-    "aesthetic": "美的スタイル"
-  },
-  "mood": {
-    "description": "雰囲気やムードの説明"
-  },
-  "typography": {
-    "text": "テキスト内容",
-    "font_style": "フォントスタイル"
-  }
-}
+    const systemPrompt = `あなたは画像生成プロンプトを詳細に構造化されたJSONに変換する専門家です。
+入力されたプロンプトを徹底的に分析し、プロンプト内のすべての情報を柔軟に構造化してJSON形式で返してください。
 
-注意事項:
-- プロンプトに含まれていない情報は、そのキーを省略してください
-- 技術的パラメータ（--ar, --styleなど）はformatセクションに配置してください
-- JSON形式のみを返し、説明文は含めないでください
-- 値が不明な場合は空文字列ではなく、そのキー自体を省略してください`;
+**柔軟な構造化の原則:**
 
-    const userPrompt = `以下のプロンプトを構造化YAMLに変換してください:\n\n${prompt}`;
+1. **プロンプトの内容に応じて、必要なセクションを動的に作成してください**
+   - プロンプトに含まれる情報の種類に応じて、適切なセクション名と構造を決定してください
+   - 固定のセクションに限定せず、プロンプトの内容に基づいて新しいセクションを作成することも可能です
+
+2. **一般的なセクション（参考例）:**
+   - **subject** (被写体): description, gender, age など
+   - **style** (スタイル): description, type, technique, aesthetic など
+   - **attire_policy** (服装ポリシー): allowed, forbidden など
+   - **hair_tone_lock** (髪色ロック): base_color, mid_glaze, depth_hint, highlight_max, rule など
+   - **pose_and_framing** (ポーズとフレーミング): shot, angle, posture, hands, contrast など
+   - **palette** (パレット): skin, hair, clothing_washes, saturation, negative_space など
+   - **lighting_mood** (照明とムード): type, rim_light, atmosphere など
+   - **background** (背景): type, color, description, strokes, layout など
+   - **styling_keywords** (スタイリングキーワード): キーワードのリスト
+   - **quality_flags** (品質フラグ): 品質フラグのリスト
+   - **format** (フォーマット): aspectRatio, style, quality, stylize など
+   - **optional_midjourney** (Midjourney固有): prompt_suffix, params など
+   - **optional_negative_tokens** (ネガティブトークン): ネガティブトークンのリスト
+
+3. **セクション名の認識:**
+   - プロンプト内の見出しやセクション名（例: "ATTIRE POLICY", "HAIR TONE LOCK", "Pose & framing", "Palette guide" など）を認識してください
+   - セクション名を適切なJSONキー名（スネークケース推奨）に変換してください
+   - 例: "ATTIRE POLICY" → "attire_policy", "Hair Tone Lock" → "hair_tone_lock"
+
+4. **データ型の適切な処理:**
+   - HEXコード（例: #1F242A）や色の範囲（例: #1F242A-#2B2F36）を正確に抽出してください
+   - リスト形式の情報（例: "no kimono, no yukata, no hakama"）は配列として抽出してください
+   - 技術的パラメータ（--ar, --style, --quality, --stylize）をformatセクションに配置してください
+   - ネストされた情報は適切に階層化してください
+
+5. **柔軟性の確保:**
+   - プロンプトに新しい種類の情報が含まれている場合、適切なセクション名と構造を作成してください
+   - セクション名は、プロンプトの内容を反映した意味のある名前にしてください
+   - プロンプトに含まれていない情報は、そのキーを省略してください（空文字列ではなく）
+
+**重要な指示:**
+- プロンプトに含まれるすべての詳細情報を可能な限り抽出してください
+- プロンプトの構造やセクション名を尊重し、それに基づいて構造化してください
+- 固定のセクションリストに縛られず、プロンプトの内容に応じて柔軟に対応してください
+- JSON形式のみを返し、説明文やコメントは含めないでください
+- 可能な限り詳細に構造化してください`;
+
+    // Few-shot learningの例（期待される出力形式を示す）
+    const exampleOutput = {
+      "subject": {
+        "description": "adult Japanese woman holding a bouquet of flowers gently in her arms",
+        "gender": "女性"
+      },
+      "style": {
+        "description": "Delicate Japanese watercolor illustration on textured washi paper. Hand-drawn pencil line (very thin, slightly uneven), airy grain. Face and hands highly refined; clothing and background simplified as soft abstract washes. Low-mid saturation, high-key whites, generous negative space.",
+        "type": "watercolor",
+        "technique": ["wet-on-wet", "glazing", "feathered_edges", "controlled_bloom_backrun", "visible_paper_tooth", "subtle_pigment_granulation", "dry_brush_accents", "lost_and_found_contours"],
+        "aesthetic": "Japanese watercolor illustration, washi paper texture, pencil line, matte, selective color, airy, serene, semi-realistic, pixiv-trending, detail-contrast, abstract washes, modern clothing"
+      },
+      "attire_policy": {
+        "allowed": ["contemporary everyday wear", "tank top", "T-shirt", "blouse", "knit", "light sportswear", "simple dress"],
+        "forbidden": ["kimono", "yukata", "hakama", "furisode", "obi sash", "kimono collars", "wide kimono sleeves", "traditional patterns", "seigaiha", "asanoha"]
+      },
+      "hair_tone_lock": {
+        "base_color": ["#1F242A", "#2B2F36"],
+        "mid_glaze": ["#343A42", "#404650"],
+        "depth_hint": "sepia/indigo mix",
+        "highlight_max": "#B8C1C8",
+        "rule": [
+          "No gray, white, or blonde hair",
+          "At least 90% of the hair area must be tinted (avoid leaving paper white)",
+          "Lashes/eyebrows match hair tone",
+          "Include a few natural flyaway strands"
+        ]
+      },
+      "pose_and_framing": {
+        "shot": "waist/bust-up",
+        "angle": "gentle 3/4 or side profile",
+        "posture": "elegant, natural Japanese proportions",
+        "hands": "Japanese hands, slender and correct anatomy",
+        "contrast": "facial features smooth and precise; clothing & background kept painterly"
+      },
+      "palette": {
+        "skin": {
+          "base": "paper white",
+          "accents": "#EFCAD3"
+        },
+        "hair": {
+          "tones": ["deep black-brown (cool bias)", "#1F242A-#404650 range"]
+        },
+        "clothing_washes": ["#6E7A87", "#B8C1C8", "#F2DCE6", "#C9D7D2"],
+        "saturation": "restrained",
+        "negative_space": "preserve clean white paper areas"
+      },
+      "lighting_mood": {
+        "type": "soft ambient window light",
+        "rim_light": "gentle on cheek/nose",
+        "atmosphere": "serene, intimate, contemporary"
+      },
+      "background": {
+        "type": "plain white or very pale wash",
+        "strokes": "2-3 broad abstract strokes only (vertical or circular)",
+        "layout": "one side kept brightest for airy text space"
+      },
+      "styling_keywords": [
+        "Japanese watercolor illustration",
+        "washi paper texture",
+        "pencil line",
+        "matte",
+        "selective color",
+        "airy",
+        "serene",
+        "semi-realistic",
+        "pixiv-trending",
+        "detail-contrast",
+        "abstract washes",
+        "modern clothing"
+      ],
+      "quality_flags": [
+        "masterpiece",
+        "best quality",
+        "high detail",
+        "clean composition"
+      ],
+      "format": {
+        "aspectRatio": "3:4",
+        "style": "raw",
+        "quality": 1,
+        "stylize": 50
+      },
+      "optional_midjourney": {
+        "prompt_suffix": "(hair: deep cool black-brown)++ (no white hair)++ (no gray hair)++ (no kimono)++ (no yukata)++ (no hakama)++ (no obi)++ (modern clothing)++",
+        "params": {
+          "ar": "3:4",
+          "style": "raw",
+          "quality": 1,
+          "stylize": 50
+        }
+      },
+      "optional_negative_tokens": [
+        "white hair",
+        "silver hair",
+        "gray hair",
+        "platinum hair",
+        "overexposed hair",
+        "blown highlights",
+        "kimono",
+        "yukata",
+        "hakama",
+        "furisode",
+        "obi",
+        "kimono collar",
+        "wide kimono sleeves",
+        "traditional Japanese clothing",
+        "traditional patterns",
+        "seigaiha",
+        "asanoha"
+      ]
+    };
+
+    const userPrompt = `以下のプロンプトを詳細に構造化されたJSONに変換してください。プロンプト内のすべての情報を可能な限り抽出し、適切なセクションに配置してください。プロンプトの内容に応じて、必要なセクションを柔軟に作成してください。上記の例を参考に、同様の詳細さで構造化してください:\n\n${prompt}`;
+
+    // デバッグ用: プロンプトをコンソールに出力（開発環境での確認用）
+    if (import.meta.env.DEV) {
+      console.log('📝 解析対象プロンプト:', prompt);
+      console.log('🤖 使用モデル:', model);
+    }
 
     try {
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -2125,12 +2780,14 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
           'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini', // または 'gpt-4o', 'gpt-3.5-turbo' など
+          model: model,
           messages: [
             { role: 'system', content: systemPrompt },
+            { role: 'user', content: `例として、以下のような詳細な構造化を期待しています:\n${JSON.stringify(exampleOutput, null, 2)}` },
+            { role: 'assistant', content: JSON.stringify(exampleOutput) },
             { role: 'user', content: userPrompt }
           ],
-          temperature: 0.3,
+          temperature: 0.2, // 構造化タスクのため、より低い温度で一貫性を向上
           response_format: { type: 'json_object' }
         }),
       });
@@ -2149,6 +2806,12 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
 
       // JSONをパース
       const yaml = JSON.parse(content);
+      
+      // デバッグ用: 解析結果をコンソールに出力（開発環境での確認用）
+      if (import.meta.env.DEV) {
+        console.log('✅ 解析結果:', JSON.stringify(yaml, null, 2));
+        console.log('📊 抽出されたセクション:', Object.keys(yaml));
+      }
       
       // 空のオブジェクトを削除
       const cleanYaml = {};
@@ -2211,30 +2874,233 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
     }
   };
 
-  // YAMLからプロンプトを生成
+  // YAMLからプロンプトを生成（再帰的にすべての情報を抽出）
   const generatePromptFromYaml = (yaml) => {
-    const parts = [];
-    
-    if (yaml.subject?.description) {
-      parts.push(yaml.subject.description);
-    }
-    if (yaml.background?.color) {
-      parts.push(`color: ${yaml.background.color}`);
-    }
-    if (yaml.style?.type) {
-      parts.push(`style: ${yaml.style.type}`);
-    }
-    if (yaml.mood?.description) {
-      parts.push(`mood: ${yaml.mood.description}`);
-    }
-    if (yaml.format?.aspectRatio) {
-      parts.push(`--ar ${yaml.format.aspectRatio}`);
-    }
-    if (yaml.format?.style) {
-      parts.push(`--style ${yaml.format.style}`);
+    if (!yaml || typeof yaml !== 'object') {
+      return '';
     }
 
-    return parts.join(', ');
+    const parts = [];
+    
+    // 再帰的にオブジェクトを走査してプロンプトを構築
+    const traverse = (obj, prefix = '') => {
+      if (obj === null || obj === undefined) {
+        return;
+      }
+
+      if (Array.isArray(obj)) {
+        // 配列の場合は、各要素を処理
+        obj.forEach((item, index) => {
+          if (typeof item === 'string' && item.trim()) {
+            parts.push(item.trim());
+          } else if (typeof item === 'object' && item !== null) {
+            traverse(item, prefix);
+          }
+        });
+        return;
+      }
+
+      if (typeof obj !== 'object') {
+        // プリミティブ値の場合
+        if (typeof obj === 'string' && obj.trim()) {
+          parts.push(obj.trim());
+        } else if (typeof obj === 'number' || typeof obj === 'boolean') {
+          parts.push(String(obj));
+        }
+        return;
+      }
+
+      // オブジェクトの場合、各キーを処理
+      for (const [key, value] of Object.entries(obj)) {
+        if (value === null || value === undefined || value === '') {
+          continue;
+        }
+
+        // 特別な処理が必要なセクション
+        if (key === 'format') {
+          // formatセクションは技術的パラメータとして処理
+          if (value.aspectRatio) {
+            parts.push(`--ar ${value.aspectRatio}`);
+          }
+          if (value.style) {
+            parts.push(`--style ${value.style}`);
+          }
+          if (value.quality) {
+            parts.push(`--quality ${value.quality}`);
+          }
+          if (value.stylize) {
+            parts.push(`--stylize ${value.stylize}`);
+          }
+          // その他のformatプロパティも処理
+          for (const [formatKey, formatValue] of Object.entries(value)) {
+            if (!['aspectRatio', 'style', 'quality', 'stylize'].includes(formatKey)) {
+              if (typeof formatValue === 'string' && formatValue.trim()) {
+                parts.push(`--${formatKey} ${formatValue.trim()}`);
+              }
+            }
+          }
+        } else if (key === 'optional_midjourney') {
+          // Midjourneyのオプション
+          if (value.prompt_suffix) {
+            parts.push(value.prompt_suffix);
+          }
+          if (value.params) {
+            for (const [paramKey, paramValue] of Object.entries(value.params)) {
+              if (paramValue !== null && paramValue !== undefined && paramValue !== '') {
+                parts.push(`--${paramKey} ${paramValue}`);
+              }
+            }
+          }
+        } else if (key === 'optional_negative_tokens') {
+          // ネガティブトークン
+          if (Array.isArray(value)) {
+            const negativeTokens = value.filter(t => t && typeof t === 'string' && t.trim());
+            if (negativeTokens.length > 0) {
+              parts.push(`negative: ${negativeTokens.join(', ')}`);
+            }
+          }
+        } else if (key === 'styling_keywords') {
+          // スタイリングキーワード
+          if (Array.isArray(value)) {
+            const keywords = value.filter(k => k && typeof k === 'string' && k.trim());
+            if (keywords.length > 0) {
+              parts.push(keywords.join(', '));
+            }
+          }
+        } else if (key === 'quality_flags') {
+          // クオリティフラグ
+          if (Array.isArray(value)) {
+            const flags = value.filter(f => f && typeof f === 'string' && f.trim());
+            if (flags.length > 0) {
+              parts.push(flags.join(', '));
+            }
+          }
+        } else if (key === 'attire_policy') {
+          // 服装ポリシー
+          if (value.allowed && Array.isArray(value.allowed)) {
+            const allowed = value.allowed.filter(a => a && typeof a === 'string' && a.trim());
+            if (allowed.length > 0) {
+              parts.push(`allowed attire: ${allowed.join(', ')}`);
+            }
+          }
+          if (value.forbidden && Array.isArray(value.forbidden)) {
+            const forbidden = value.forbidden.filter(f => f && typeof f === 'string' && f.trim());
+            if (forbidden.length > 0) {
+              parts.push(`forbidden: ${forbidden.join(', ')}`);
+            }
+          }
+        } else if (key === 'hair_tone_lock') {
+          // 髪の色ロック
+          if (value.base_color && Array.isArray(value.base_color)) {
+            parts.push(`hair base color: ${value.base_color.join('-')}`);
+          }
+          if (value.mid_glaze && Array.isArray(value.mid_glaze)) {
+            parts.push(`hair mid glaze: ${value.mid_glaze.join('-')}`);
+          }
+          if (value.highlight_max) {
+            parts.push(`hair highlight max: ${value.highlight_max}`);
+          }
+          if (value.rule && Array.isArray(value.rule)) {
+            value.rule.forEach(rule => {
+              if (typeof rule === 'string' && rule.trim()) {
+                parts.push(rule.trim());
+              }
+            });
+          }
+        } else if (key === 'palette') {
+          // パレット
+          if (value.skin) {
+            if (value.skin.base) parts.push(`skin base: ${value.skin.base}`);
+            if (value.skin.accents) parts.push(`skin accents: ${value.skin.accents}`);
+          }
+          if (value.hair) {
+            if (value.hair.tones) {
+              if (Array.isArray(value.hair.tones)) {
+                parts.push(`hair tones: ${value.hair.tones.join(', ')}`);
+              } else if (typeof value.hair.tones === 'string') {
+                parts.push(`hair tones: ${value.hair.tones}`);
+              }
+            }
+          }
+          if (value.clothing_washes && Array.isArray(value.clothing_washes)) {
+            parts.push(`clothing washes: ${value.clothing_washes.join(', ')}`);
+          }
+          if (value.saturation) parts.push(`saturation: ${value.saturation}`);
+          if (value.negative_space) parts.push(`negative space: ${value.negative_space}`);
+        } else if (key === 'pose_and_framing') {
+          // ポーズとフレーミング
+          const poseParts = [];
+          if (value.shot) poseParts.push(`shot: ${value.shot}`);
+          if (value.angle) poseParts.push(`angle: ${value.angle}`);
+          if (value.posture) poseParts.push(`posture: ${value.posture}`);
+          if (value.hands) poseParts.push(`hands: ${value.hands}`);
+          if (value.contrast) poseParts.push(`contrast: ${value.contrast}`);
+          if (poseParts.length > 0) {
+            parts.push(poseParts.join(', '));
+          }
+        } else if (key === 'lighting_mood') {
+          // ライティングとムード
+          const lightingParts = [];
+          if (value.type) lightingParts.push(`lighting: ${value.type}`);
+          if (value.rim_light) lightingParts.push(`rim light: ${value.rim_light}`);
+          if (value.atmosphere) lightingParts.push(`atmosphere: ${value.atmosphere}`);
+          if (lightingParts.length > 0) {
+            parts.push(lightingParts.join(', '));
+          }
+        } else if (key === 'background') {
+          // 背景
+          if (value.type) parts.push(`background type: ${value.type}`);
+          if (value.color) parts.push(`background color: ${value.color}`);
+          if (value.description) parts.push(`background: ${value.description}`);
+          if (value.strokes) parts.push(`background strokes: ${value.strokes}`);
+          if (value.layout) parts.push(`background layout: ${value.layout}`);
+        } else if (key === 'style') {
+          // スタイル
+          if (value.description) {
+            parts.push(value.description);
+          }
+          if (value.type) {
+            parts.push(`style type: ${value.type}`);
+          }
+          if (value.aesthetic) {
+            parts.push(`aesthetic: ${value.aesthetic}`);
+          }
+          if (value.technique && Array.isArray(value.technique)) {
+            parts.push(`technique: ${value.technique.join(', ')}`);
+          }
+        } else if (key === 'subject') {
+          // 被写体
+          if (value.description) {
+            parts.push(value.description);
+          }
+          if (value.age) parts.push(`age: ${value.age}`);
+          if (value.gender) parts.push(`gender: ${value.gender}`);
+        } else if (key === 'mood') {
+          // ムード
+          if (value.description) {
+            parts.push(`mood: ${value.description}`);
+          }
+        } else if (key === 'typography') {
+          // タイポグラフィ
+          if (value.text) parts.push(`text: ${value.text}`);
+          if (value.font_style) parts.push(`font style: ${value.font_style}`);
+        } else {
+          // その他のキーは再帰的に処理
+          if (typeof value === 'string' && value.trim()) {
+            parts.push(`${key}: ${value.trim()}`);
+          } else if (typeof value === 'object') {
+            traverse(value, prefix ? `${prefix}.${key}` : key);
+          }
+        }
+      }
+    };
+
+    traverse(yaml);
+    
+    // 重複を除去し、空の要素をフィルタリング
+    const uniqueParts = [...new Set(parts.filter(p => p && p.trim()))];
+    
+    return uniqueParts.join(', ');
   };
 
   // テンプレートを保存
@@ -2245,7 +3111,8 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
     }
 
     const newTemplate = {
-      id: Date.now().toString(),
+      // UUID型のIDを生成（テーブルのidカラムがUUID型のため）
+      id: generateUUID(),
       name: templateName,
       yaml: yamlData,
       originalPrompt: masterPrompt,
@@ -2262,13 +3129,7 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
   // F-05: スタイルライブラリに追加
   const handleAddToStyleLibrary = () => {
     if (!yamlData) {
-      alert('プロンプトが生成されていません');
-      return;
-    }
-
-    const generatedPrompt = generatePromptFromYaml(yamlData);
-    if (!generatedPrompt.trim()) {
-      alert('プロンプトが空です');
+      alert('YAMLデータがありません');
       return;
     }
 
@@ -2277,10 +3138,12 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
       return;
     }
 
+    // YAMLデータをそのまま保存（JSON文字列としてpromptフィールドに保存）
     const newStyle = {
-      id: Date.now().toString(),
+      id: generateUUID(),
       name: styleName.trim(),
-      prompt: generatedPrompt,
+      prompt: JSON.stringify(yamlData), // YAMLデータをJSON文字列として保存
+      yaml: yamlData, // ローカル状態用にYAMLオブジェクトも保持
       thumbnail: null,
       source: 'prompt-mode',
       createdAt: new Date().toISOString()
@@ -2409,9 +3272,21 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
                   key={template.id}
                   className={`template-item ${currentTemplate?.id === template.id ? 'active' : ''}`}
                   onClick={() => handleLoadTemplate(template)}
+                  style={{ position: 'relative', paddingRight: '30px' }}
                 >
                   <h3>{template.name}</h3>
                   <p className="template-date">{new Date(template.createdAt).toLocaleDateString('ja-JP')}</p>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteTemplate(template.id);
+                    }}
+                    className="delete-image-button"
+                    title="削除"
+                    style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 10 }}
+                  >
+                    ×
+                  </button>
                 </div>
               ))
             )}
@@ -2595,7 +3470,7 @@ YAML構造: ${JSON.stringify(yamlData, null, 2)}
                           />
                         </div>
                       )}
-                      <div className="mode-indicator">
+                      <div className={`mode-indicator mode-indicator-${currentMode}`}>
                         現在のモード: {currentMode === 'field' ? '設定項目' : currentMode === 'select' ? '選択肢' : '自由入力'}
                       </div>
                     </div>

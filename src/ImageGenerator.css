@@ -26,8 +26,8 @@
 
 .style-sidebar-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   margin-bottom: 1.5rem;
   padding-bottom: 1rem;
   border-bottom: 2px solid #e0e0e0;
@@ -210,6 +210,11 @@
   color: #666;
   margin: 0.5rem 0;
   line-height: 1.4;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .apply-style-button {
@@ -1168,11 +1173,32 @@
 .mode-indicator {
   margin-top: 1rem;
   padding: 0.5rem;
-  background: #e3f2fd;
   border-radius: 4px;
   font-size: 0.85rem;
-  color: #1976d2;
   text-align: center;
+  font-weight: 500;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* 設定項目モード（青系） */
+.mode-indicator-field {
+  background: #e3f2fd;
+  color: #1976d2;
+  border: 1px solid #90caf9;
+}
+
+/* 選択肢モード（淡い赤系） */
+.mode-indicator-select {
+  background: #ffebee;
+  color: #c62828;
+  border: 1px solid #ef9a9a;
+}
+
+/* 自由入力モード（黄色系） */
+.mode-indicator-text {
+  background: #fff9c4;
+  color: #f57f17;
+  border: 1px solid #fff59d;
 }
 
 .template-preview {

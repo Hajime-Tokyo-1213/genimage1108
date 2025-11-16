@@ -5,6 +5,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import Login from './components/Login'
 import ProtectedRoute from './components/ProtectedRoute'
 import AuthCallback from './components/AuthCallback'
+import ImageHistoryTable from './components/ImageHistoryTable'
 
 function App() {
   return (
@@ -20,6 +21,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ImageGenerator />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/image-history"
+              element={
+                <ProtectedRoute>
+                  <ImageHistoryTable />
                 </ProtectedRoute>
               }
             />
